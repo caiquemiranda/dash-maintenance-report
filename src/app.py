@@ -4,6 +4,18 @@ import streamlit as st
 import re
 import pandas as pd
 
+def tentar_decodificar(arquivo):
+    """Tenta decodificar o arquivo com diferentes codificações"""
+    codificacoes = ['utf-8', 'latin1', 'cp1252', 'iso-8859-1']
+    
+    for codec in codificacoes:
+        try:
+            return arquivo.getvalue().decode(codec)
+        except UnicodeDecodeError:
+            continue
+    
+    raise UnicodeDecodeError("Não foi possível decodificar o arquivo com nenhuma das codificações conhecidas")
+
 def processar_arquivo(conteudo):
     # Dividir o conteúdo em linhas
     linhas = conteudo.split('\n')
@@ -61,10 +73,10 @@ def main():
     arquivo = st.file_uploader("Faça upload do arquivo de log .txt", type=['txt'])
     
     if arquivo is not None:
-        # Ler o conteúdo do arquivo
-        conteudo = arquivo.getvalue().decode('utf-8')
-        
         try:
+            # Tentar decodificar o arquivo com diferentes codificações
+            conteudo = tentar_decodificar(arquivo)
+            
             # Processar o arquivo e criar DataFrame
             df = processar_arquivo(conteudo)
             
@@ -88,7 +100,7 @@ def main():
                 st.metric("Registros OK", len(df[df['Status'] == 'OK']))
             
             # Botão para download dos dados processados
-            csv = df.to_csv(index=False)
+            csv = df.to_csv(index=False, encoding='utf-8-sig')
             st.download_button(
                 label="Download dados processados (CSV)",
                 data=csv,
