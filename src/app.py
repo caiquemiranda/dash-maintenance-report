@@ -115,7 +115,7 @@ def processar_arquivo(conteudo):
                             device_types = [
                                 'SMOKE DETECTOR', 'Quick Alert Signal', 'AUXILIARY RELAY', 'PULL STATION',
                                 'SUPERVISORY MONITOR', 'SIGNAL CIRCUIT', 'MAPNET ISOLATOR', 'FIRE MONITOR ZONE',
-                                'TROUBLE RELAY'  # Adicionado para o novo caso
+                                'TROUBLE RELAY'
                             ]
                             
                             for device in device_types:
@@ -188,49 +188,69 @@ def main():
             # Processar o arquivo e criar DataFrame
             df = processar_arquivo(conteudo)
             
-            # Adicionar filtros de data
+            # Adicionar filtros na barra lateral
             st.sidebar.header("Filtros")
             
-            # Extrair datas únicas
-            df['DIA'] = pd.to_datetime(df['DATE_OBJ']).dt.day
-            df['MES'] = pd.to_datetime(df['DATE_OBJ']).dt.month
-            df['ANO'] = pd.to_datetime(df['DATE_OBJ']).dt.year
+            # Extrair valores únicos para filtros
+            nodes_disponiveis = sorted(df['NODE'].dropna().unique().tolist())
+            todos_status = sorted(df['STATUS'].dropna().unique().tolist())
+            todos_devices = sorted(df['DEVICE_TYPE'].dropna().unique().tolist())
             
-            # Lista de dias, meses e anos disponíveis
-            dias_disponiveis = sorted(df['DIA'].dropna().unique().tolist())
-            meses_disponiveis = sorted(df['MES'].dropna().unique().tolist())
-            anos_disponiveis = sorted(df['ANO'].dropna().unique().tolist())
+            # Extrair datas para os filtros de período
+            df['DATA_COMPLETA'] = pd.to_datetime(df['DATE_OBJ'])
+            datas_disponiveis = sorted(df['DATA_COMPLETA'].dropna().unique())
             
-            # Criar filtros
-            dia_selecionado = st.sidebar.selectbox("Dia", ["Todos"] + dias_disponiveis)
-            mes_selecionado = st.sidebar.selectbox("Mês", ["Todos"] + meses_disponiveis)
-            ano_selecionado = st.sidebar.selectbox("Ano", ["Todos"] + anos_disponiveis)
+            if len(datas_disponiveis) > 0:
+                data_min = datas_disponiveis.min()
+                data_max = datas_disponiveis.max()
+                
+                # Filtro de período
+                st.sidebar.subheader("Período de Datas")
+                data_inicio = st.sidebar.date_input("Data Inicial", data_min, min_value=data_min, max_value=data_max)
+                data_fim = st.sidebar.date_input("Data Final", data_max, min_value=data_min, max_value=data_max)
+                
+                # Garantir que a data final não seja anterior à data inicial
+                if data_fim < data_inicio:
+                    st.sidebar.error("Data final deve ser posterior à data inicial!")
+                    data_fim = data_inicio
+            else:
+                # Caso não existam datas válidas
+                data_inicio = datetime.date.today()
+                data_fim = datetime.date.today()
             
-            # Filtro de STATUS
-            todos_status = sorted(df['STATUS'].unique().tolist())
-            status_selecionado = st.sidebar.selectbox("Status", ["Todos"] + todos_status)
+            # Filtros de NODE (novo), DEVICE_TYPE e STATUS (agora como multiselect)
+            node_selecionado = st.sidebar.selectbox("NODE", ["Todos"] + nodes_disponiveis)
             
-            # Filtro de DEVICE_TYPE
-            todos_devices = sorted(df['DEVICE_TYPE'].unique().tolist())
-            device_selecionado = st.sidebar.selectbox("Tipo de Dispositivo", ["Todos"] + todos_devices)
+            device_types_selecionados = st.sidebar.multiselect(
+                "Tipos de Dispositivo (múltipla escolha)",
+                options=todos_devices,
+                default=[]
+            )
+            
+            status_selecionados = st.sidebar.multiselect(
+                "Status (múltipla escolha)",
+                options=todos_status,
+                default=[]
+            )
             
             # Aplicar filtros
             df_filtrado = df.copy()
             
-            if dia_selecionado != "Todos":
-                df_filtrado = df_filtrado[df_filtrado['DIA'] == dia_selecionado]
+            # Filtro de período
+            df_filtrado = df_filtrado[(df_filtrado['DATA_COMPLETA'].dt.date >= data_inicio) & 
+                                     (df_filtrado['DATA_COMPLETA'].dt.date <= data_fim)]
             
-            if mes_selecionado != "Todos":
-                df_filtrado = df_filtrado[df_filtrado['MES'] == mes_selecionado]
-                
-            if ano_selecionado != "Todos":
-                df_filtrado = df_filtrado[df_filtrado['ANO'] == ano_selecionado]
-                
-            if status_selecionado != "Todos":
-                df_filtrado = df_filtrado[df_filtrado['STATUS'] == status_selecionado]
-                
-            if device_selecionado != "Todos":
-                df_filtrado = df_filtrado[df_filtrado['DEVICE_TYPE'] == device_selecionado]
+            # Filtro de NODE
+            if node_selecionado != "Todos":
+                df_filtrado = df_filtrado[df_filtrado['NODE'] == node_selecionado]
+            
+            # Filtro de Tipo de Dispositivo (multiselect)
+            if device_types_selecionados:
+                df_filtrado = df_filtrado[df_filtrado['DEVICE_TYPE'].isin(device_types_selecionados)]
+            
+            # Filtro de Status (multiselect)
+            if status_selecionados:
+                df_filtrado = df_filtrado[df_filtrado['STATUS'].isin(status_selecionados)]
             
             # Exibir os dados originais
             with st.expander("Ver conteúdo original"):
@@ -238,7 +258,7 @@ def main():
             
             # Exibir a tabela processada
             st.subheader('Dados Processados')
-            st.dataframe(df_filtrado.drop(columns=['DATE_OBJ', 'DIA', 'MES', 'ANO']), use_container_width=True)
+            st.dataframe(df_filtrado.drop(columns=['DATE_OBJ', 'DATA_COMPLETA']), use_container_width=True)
             
             # Adicionar algumas métricas
             st.subheader('Métricas')
@@ -276,6 +296,16 @@ def main():
                                color='Contagem', height=400)
             st.plotly_chart(fig_status, use_container_width=True)
             
+            # Gráfico de contagem por NODE
+            st.subheader('Contagem por NODE')
+            node_count = df_filtrado['NODE'].value_counts().reset_index()
+            node_count.columns = ['NODE', 'Contagem']
+            
+            fig_node = px.bar(node_count, x='NODE', y='Contagem',
+                              title='Quantidade por NODE',
+                              color='Contagem', height=400)
+            st.plotly_chart(fig_node, use_container_width=True)
+            
             # Top 10 falhas mais comuns
             st.subheader('Top 10 Falhas Mais Frequentes')
             
@@ -299,7 +329,7 @@ def main():
             st.dataframe(top_falhas[['POINT_NAME', 'DESCRIPTION', 'DEVICE_TYPE', 'STATUS', 'Contagem']], use_container_width=True)
             
             # Botão para download dos dados processados
-            csv = df_filtrado.drop(columns=['DATE_OBJ', 'DIA', 'MES', 'ANO']).to_csv(index=False, encoding='utf-8-sig', sep=';')
+            csv = df_filtrado.drop(columns=['DATE_OBJ', 'DATA_COMPLETA']).to_csv(index=False, encoding='utf-8-sig', sep=';')
             st.download_button(
                 label="Download dados processados (CSV)",
                 data=csv,
