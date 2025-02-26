@@ -3,6 +3,7 @@
 import streamlit as st
 import re
 import pandas as pd
+import datetime
 
 def tentar_decodificar(arquivo):
     """Tenta decodificar o arquivo com diferentes codificações"""
@@ -26,7 +27,7 @@ def processar_arquivo(conteudo):
     # Lista para armazenar os dados processados
     dados = []
     
-    # Processar as linhas em grupos de 3
+    # Processar as linhas em grupos de 4
     i = 0
     while i < len(linhas):
         if not linhas[i].strip():
@@ -42,41 +43,84 @@ def processar_arquivo(conteudo):
                     'TIME': linha1_match.group(2)
                 }
                 
-                # Segunda linha: POINT_NAME e DESCRIPTION
-                if i + 1 < len(linhas):
-                    linha2 = linhas[i+1].strip()
-                    point_match = re.match(r'([\d:]\S+)\s+(.*)', linha2)
+                # Obter o resto da primeira linha (início da DESCRIPTION)
+                point_descr = re.search(r'\d{2}:\d{2}:\d{2}\s+(.*)', linhas[i])
+                if point_descr:
+                    point_desc_texto = point_descr.group(1).strip()
+                    
+                    # Extrair o POINT_NAME e o início da DESCRIPTION
+                    point_match = re.match(r'([\d:]\S+)\s+(.*)', point_desc_texto)
                     if point_match:
                         registro['POINT_NAME'] = point_match.group(1)
-                        registro['DESCRIPTION'] = point_match.group(2)
-                        
-                    # Extrair DATA
-                    data_match = re.search(r'SUN\s+(\d{2}-\w{3}-\d{2})', linha2)
-                    if data_match:
-                        registro['DATE'] = data_match.group(0)  # Incluir "SUN" na data
+                        description = point_match.group(2)
                 
-                # Terceira linha: NODE, DEVICE_TYPE e STATUS
-                if i + 2 < len(linhas):
+                # Segunda linha: continuação da DESCRIPTION
+                if i + 1 < len(linhas) and linhas[i+1].strip():
+                    desc_continuation = linhas[i+1].strip()
+                    if description:
+                        # Juntar as duas partes da descrição
+                        description = description + " " + desc_continuation
+                    else:
+                        description = desc_continuation
+                    
+                registro['DESCRIPTION'] = description
+                
+                # Terceira linha: DATA e NODE
+                if i + 2 < len(linhas) and linhas[i+2].strip():
                     linha3 = linhas[i+2].strip()
                     
+                    # Extrair DATA
+                    data_match = re.search(r'SUN\s+(\d{2})-(\w{3})-(\d{2})', linha3)
+                    if data_match:
+                        dia = data_match.group(1)
+                        mes_abrev = data_match.group(2)
+                        ano = data_match.group(3)
+                        
+                        # Converter o mês de abreviação para número
+                        meses = {'JAN': '01', 'FEB': '02', 'MAR': '03', 'APR': '04', 'MAY': '05', 'JUN': '06',
+                                'JUL': '07', 'AUG': '08', 'SEP': '09', 'OCT': '10', 'NOV': '11', 'DEC': '12'}
+                        mes = meses.get(mes_abrev, '01')
+                        
+                        # Formatar a data como DD/MM/YYYY
+                        registro['DATE'] = f"{dia}/{mes}/20{ano}"
+                    
                     # Extrair NODE
-                    node_match = re.search(r'(\(NODE\s+\d+\))', linha3)
+                    node_match = re.search(r'\(NODE\s+(\d+)\)', linha3)
                     if node_match:
                         registro['NODE'] = node_match.group(1)
+                
+                # Quarta linha: DEVICE_TYPE e STATUS
+                if i + 3 < len(linhas) and linhas[i+3].strip():
+                    linha4 = linhas[i+3].strip()
                     
-                    # Extrair DEVICE_TYPE e STATUS
-                    if 'SMOKE DETECTOR' in linha3:
+                    # Extrair DEVICE_TYPE
+                    if 'SMOKE DETECTOR' in linha4:
                         registro['DEVICE_TYPE'] = 'SMOKE DETECTOR'
-                        registro['STATUS'] = 'BAD ANSWER' if 'BAD ANSWER' in linha3 else 'OK'
-                    elif 'Quick Alert Signal' in linha3:
+                    elif 'Quick Alert Signal' in linha4:
                         registro['DEVICE_TYPE'] = 'Quick Alert Signal'
-                        registro['STATUS'] = 'SHORT CIRCUIT TROUBLE' if 'SHORT CIRCUIT TROUBLE' in linha3 else 'OK'
+                    elif 'AUXILIARY RELAY' in linha4:
+                        registro['DEVICE_TYPE'] = 'AUXILIARY RELAY'
                     else:
-                        registro['DEVICE_TYPE'] = 'OUTRO'
-                        registro['STATUS'] = linha3.split()[-1] if linha3 else 'N/A'
+                        device_match = re.match(r'([^A-Z]+)(?:\s+[A-Z]+\s+[A-Z]+)?', linha4)
+                        if device_match:
+                            registro['DEVICE_TYPE'] = device_match.group(1).strip()
+                        else:
+                            registro['DEVICE_TYPE'] = 'N/A'
+                    
+                    # Extrair STATUS
+                    if 'BAD ANSWER' in linha4:
+                        registro['STATUS'] = 'BAD ANSWER'
+                    elif 'SHORT CIRCUIT TROUBLE' in linha4:
+                        registro['STATUS'] = 'SHORT CIRCUIT TROUBLE'
+                    else:
+                        status_match = re.search(r'[A-Z]+\s+[A-Z]+$', linha4)
+                        if status_match:
+                            registro['STATUS'] = status_match.group(0)
+                        else:
+                            registro['STATUS'] = 'N/A'
                 
                 dados.append(registro)
-                i += 3
+                i += 4  # Avançar para o próximo grupo de 4 linhas
             else:
                 i += 1
         except Exception as e:
@@ -126,6 +170,12 @@ def main():
                 st.metric("Bad Answers", len(df[df['STATUS'] == 'BAD ANSWER']))
             with col3:
                 st.metric("Short Circuit Troubles", len(df[df['STATUS'] == 'SHORT CIRCUIT TROUBLE']))
+            
+            # Gráfico de contagem por tipo de dispositivo
+            st.subheader('Contagem por Tipo de Dispositivo')
+            device_count = df['DEVICE_TYPE'].value_counts().reset_index()
+            device_count.columns = ['Tipo de Dispositivo', 'Contagem']
+            st.bar_chart(device_count.set_index('Tipo de Dispositivo'))
             
             # Botão para download dos dados processados
             csv = df.to_csv(index=False, encoding='utf-8-sig', sep=';')
