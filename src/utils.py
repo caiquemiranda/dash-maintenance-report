@@ -16,10 +16,9 @@ def tentar_decodificar(arquivo):
 
 def converter_data(dia_semana, dia, mes_abrev, ano):
     """Converte data do formato texto para formato DD/MM/YYYY"""
-    # Converter o mês de abreviação para número
+
     meses = {'JAN': '01', 'FEB': '02', 'MAR': '03', 'APR': '04', 'MAY': '05', 'JUN': '06',
             'JUL': '07', 'AUG': '08', 'SEP': '09', 'OCT': '10', 'NOV': '11', 'DEC': '12'}
     mes = meses.get(mes_abrev, '01')
     
-    # Formatar a data como DD/MM/YYYY
     return f"{dia}/{mes}/20{ano}" 

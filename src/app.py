@@ -1,5 +1,3 @@
-#app.py
-
 import streamlit as st
 import pandas as pd
 import datetime
@@ -7,11 +5,8 @@ import numpy as np
 import os
 import sys
 
-# Adicionar o diretório pai ao path para encontrar os módulos independentemente 
-# de como o script é executado
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-# Importar módulos com importações absolutas
 import src.utils as utils
 import src.parser as parser
 import src.visualizations as viz
@@ -26,27 +21,22 @@ def main():
     
     if arquivo is not None:
         try:
-            # Tentar decodificar o arquivo com diferentes codificações
             conteudo = utils.tentar_decodificar(arquivo)
             
-            # Processar o arquivo e criar DataFrame
             df = parser.processar_arquivo(conteudo)
             
-            # Adicionar filtros na barra lateral
             st.sidebar.header("Filtros")
             
-            # Extrair valores únicos para filtros
             nodes_disponiveis = sorted(df['NODE'].dropna().unique().tolist())
             todos_status = sorted(df['STATUS'].dropna().unique().tolist())
             todos_devices = sorted(df['DEVICE_TYPE'].dropna().unique().tolist())
             todos_dispositivos = sorted(df['POINT_NAME'].dropna().unique().tolist())
             
-            # Extrair datas para os filtros de período
             df['DATA_COMPLETA'] = pd.to_datetime(df['DATE_OBJ'])
             
             # Corrigir o problema com as datas
             if not df['DATA_COMPLETA'].empty and not df['DATA_COMPLETA'].isna().all():
-                # Converter para lista de timestamps e usar min/max do Python
+
                 datas_validas = [d for d in df['DATA_COMPLETA'] if pd.notna(d)]
                 
                 if datas_validas:
@@ -58,17 +48,14 @@ def main():
                     data_inicio = st.sidebar.date_input("Data Inicial", data_min, min_value=data_min, max_value=data_max)
                     data_fim = st.sidebar.date_input("Data Final", data_max, min_value=data_min, max_value=data_max)
                     
-                    # Garantir que a data final não seja anterior à data inicial
                     if data_fim < data_inicio:
                         st.sidebar.error("Data final deve ser posterior à data inicial!")
                         data_fim = data_inicio
                 else:
-                    # Caso não existam datas válidas
                     data_hoje = datetime.date.today()
                     data_inicio = data_hoje
                     data_fim = data_hoje
             else:
-                # Caso não existam datas válidas
                 data_hoje = datetime.date.today()
                 data_inicio = data_hoje
                 data_fim = data_hoje
@@ -188,4 +175,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-

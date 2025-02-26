@@ -38,7 +38,7 @@ def criar_grafico_top_falhas(df):
     top_falhas = df.groupby(['POINT_NAME', 'DESCRIPTION', 'DEVICE_TYPE', 'STATUS']).size().reset_index(name='Contagem')
     top_falhas = top_falhas.sort_values('Contagem', ascending=False).head(10)
     
-    # Criar uma coluna de descrição mais amigável
+
     top_falhas['Descrição Falha'] = top_falhas.apply(
         lambda x: f"{x['POINT_NAME']} - {x['DESCRIPTION']} ({x['DEVICE_TYPE']}): {x['STATUS']}", axis=1
     )
@@ -48,4 +48,4 @@ def criar_grafico_top_falhas(df):
                 color='Contagem', height=500)
     fig.update_layout(xaxis_tickangle=-45)
     
-    return fig, top_falhas 
+    return fig, top_falhas
