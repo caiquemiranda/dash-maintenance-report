@@ -20,24 +20,13 @@ def processar_arquivo(conteudo):
     # Dividir o conteúdo em linhas
     linhas = conteudo.split('\n')
     
-    # Extrair informações do cabeçalho
-    header_info = {}
-    for linha in linhas[:6]:
-        if 'BRIDTFPP' in linha:
-            match = re.search(r'Node\s+(\d+)\s+Rev\s+(\d+)\s+(\w+)\s+(\d{2}-\w{3}-\d{2})\s+(\d{2}:\d{2}:\d{2})', linha)
-            if match:
-                header_info['Node'] = match.group(1)
-                header_info['Revision'] = match.group(2)
-                header_info['Data_Log'] = match.group(4)
-                header_info['Hora_Log'] = match.group(5)
-    
-    # Pular as linhas do cabeçalho
+    # Pular as primeiras 6 linhas de cabeçalho
     linhas = linhas[6:]
     
     # Lista para armazenar os dados processados
     dados = []
     
-    # Processar as linhas em grupos
+    # Processar as linhas em grupos de 3
     i = 0
     while i < len(linhas):
         if not linhas[i].strip():
@@ -45,61 +34,57 @@ def processar_arquivo(conteudo):
             continue
             
         try:
-            # Primeira linha: número e horário
+            # Primeira linha: ID e TIME
             linha1_match = re.match(r'(\d+)\s+(\d{2}:\d{2}:\d{2})', linhas[i])
             if linha1_match:
-                # Inicializar registro com valores padrão
                 registro = {
-                    'Sequência': linha1_match.group(1),
-                    'Horário': linha1_match.group(2),
-                    'Data': 'N/A',
-                    'Dispositivo': 'N/A',
-                    'Localização': 'N/A',
-                    'Node': header_info.get('Node', 'N/A'),
-                    'Node_Dispositivo': 'N/A',
-                    'Tipo': 'N/A',
-                    'Status': 'N/A',
-                    'Revisão': header_info.get('Revision', 'N/A'),
-                    'Data_Log': header_info.get('Data_Log', 'N/A'),
+                    'ID': linha1_match.group(1),
+                    'TIME': linha1_match.group(2)
                 }
                 
-                # Segunda linha: informações do dispositivo
+                # Segunda linha: POINT_NAME e DESCRIPTION
                 if i + 1 < len(linhas):
                     linha2 = linhas[i+1].strip()
+                    point_match = re.match(r'([\d:]\S+)\s+(.*)', linha2)
+                    if point_match:
+                        registro['POINT_NAME'] = point_match.group(1)
+                        registro['DESCRIPTION'] = point_match.group(2)
+                        
+                    # Extrair DATA
                     data_match = re.search(r'SUN\s+(\d{2}-\w{3}-\d{2})', linha2)
                     if data_match:
-                        registro['Data'] = data_match.group(1)
-                    
-                    # Tentar diferentes padrões para dispositivo e localização
-                    device_match = re.search(r'([\d:][\w\-]+)\s+ESCRITORIO\s+ATENDIMENTO\s+RH\s+-\s+(\w+)', linha2)
-                    if device_match:
-                        registro['Dispositivo'] = device_match.group(1)
-                        registro['Localização'] = device_match.group(2)
+                        registro['DATE'] = data_match.group(0)  # Incluir "SUN" na data
                 
-                # Terceira linha: NODE e status
+                # Terceira linha: NODE, DEVICE_TYPE e STATUS
                 if i + 2 < len(linhas):
                     linha3 = linhas[i+2].strip()
-                    node_match = re.search(r'\(NODE\s+(\d+)\)', linha3)
-                    if node_match:
-                        registro['Node_Dispositivo'] = node_match.group(1)
                     
-                    registro['Tipo'] = 'SMOKE DETECTOR' if 'SMOKE DETECTOR' in linha3 else 'OUTRO'
-                    registro['Status'] = 'BAD ANSWER' if 'BAD ANSWER' in linha3 else 'OK'
+                    # Extrair NODE
+                    node_match = re.search(r'(\(NODE\s+\d+\))', linha3)
+                    if node_match:
+                        registro['NODE'] = node_match.group(1)
+                    
+                    # Extrair DEVICE_TYPE e STATUS
+                    if 'SMOKE DETECTOR' in linha3:
+                        registro['DEVICE_TYPE'] = 'SMOKE DETECTOR'
+                        registro['STATUS'] = 'BAD ANSWER' if 'BAD ANSWER' in linha3 else 'OK'
+                    elif 'Quick Alert Signal' in linha3:
+                        registro['DEVICE_TYPE'] = 'Quick Alert Signal'
+                        registro['STATUS'] = 'SHORT CIRCUIT TROUBLE' if 'SHORT CIRCUIT TROUBLE' in linha3 else 'OK'
+                    else:
+                        registro['DEVICE_TYPE'] = 'OUTRO'
+                        registro['STATUS'] = linha3.split()[-1] if linha3 else 'N/A'
                 
                 dados.append(registro)
                 i += 3
             else:
                 i += 1
-        except (AttributeError, IndexError) as e:
+        except Exception as e:
             print(f"Erro ao processar linha {i}: {str(e)}")
             i += 1
     
-    # Criar DataFrame com todas as colunas necessárias
-    colunas = [
-        'Sequência', 'Data', 'Horário', 'Dispositivo', 'Localização',
-        'Tipo', 'Status', 'Node', 'Node_Dispositivo', 'Revisão', 'Data_Log'
-    ]
-    
+    # Criar DataFrame com as colunas na ordem especificada
+    colunas = ['ID', 'TIME', 'POINT_NAME', 'DESCRIPTION', 'DATE', 'NODE', 'DEVICE_TYPE', 'STATUS']
     df = pd.DataFrame(dados)
     
     # Garantir que todas as colunas existam
@@ -107,7 +92,6 @@ def processar_arquivo(conteudo):
         if coluna not in df.columns:
             df[coluna] = 'N/A'
     
-    # Retornar apenas as colunas desejadas na ordem correta
     return df[colunas]
 
 def main():
@@ -139,12 +123,12 @@ def main():
             with col1:
                 st.metric("Total de Registros", len(df))
             with col2:
-                st.metric("Bad Answers", len(df[df['Status'] == 'BAD ANSWER']))
+                st.metric("Bad Answers", len(df[df['STATUS'] == 'BAD ANSWER']))
             with col3:
-                st.metric("Registros OK", len(df[df['Status'] == 'OK']))
+                st.metric("Short Circuit Troubles", len(df[df['STATUS'] == 'SHORT CIRCUIT TROUBLE']))
             
             # Botão para download dos dados processados
-            csv = df.to_csv(index=False, encoding='utf-8-sig')
+            csv = df.to_csv(index=False, encoding='utf-8-sig', sep=';')
             st.download_button(
                 label="Download dados processados (CSV)",
                 data=csv,
