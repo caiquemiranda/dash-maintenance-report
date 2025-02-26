@@ -5,6 +5,7 @@ import re
 import pandas as pd
 import datetime
 import plotly.express as px
+import plotly.graph_objects as go
 import numpy as np
 
 def tentar_decodificar(arquivo):
@@ -197,6 +198,7 @@ def main():
             nodes_disponiveis = sorted(df['NODE'].dropna().unique().tolist())
             todos_status = sorted(df['STATUS'].dropna().unique().tolist())
             todos_devices = sorted(df['DEVICE_TYPE'].dropna().unique().tolist())
+            todos_dispositivos = sorted(df['POINT_NAME'].dropna().unique().tolist())
             
             # Extrair datas para os filtros de período
             df['DATA_COMPLETA'] = pd.to_datetime(df['DATE_OBJ'])
@@ -245,6 +247,13 @@ def main():
                 default=[]
             )
             
+            # Novo filtro para análise de dispositivo específico
+            st.sidebar.subheader("Análise de Dispositivo Específico")
+            dispositivo_selecionado = st.sidebar.selectbox(
+                "Selecione um dispositivo (POINT_NAME) para análise detalhada",
+                ["Nenhum"] + todos_dispositivos
+            )
+            
             # Aplicar filtros
             df_filtrado = df.copy()
             
@@ -290,25 +299,30 @@ def main():
                 on_off_count = len(df_filtrado[df_filtrado['STATUS'].isin(['ON', 'OFF'])])
                 st.metric("ON/OFF Switches", on_off_count)
             
-            # Gráfico de contagem por tipo de dispositivo
-            st.subheader('Contagem por Tipo de Dispositivo')
-            device_count = df_filtrado['DEVICE_TYPE'].value_counts().reset_index()
-            device_count.columns = ['Tipo de Dispositivo', 'Contagem']
+            # Visualizações padrão
+            col_esq, col_dir = st.columns(2)
             
-            fig_device = px.bar(device_count, x='Tipo de Dispositivo', y='Contagem',
-                               title='Quantidade por Tipo de Dispositivo',
-                               color='Contagem', height=400)
-            st.plotly_chart(fig_device, use_container_width=True)
+            with col_esq:
+                # Gráfico de contagem por tipo de dispositivo
+                st.subheader('Contagem por Tipo de Dispositivo')
+                device_count = df_filtrado['DEVICE_TYPE'].value_counts().reset_index()
+                device_count.columns = ['Tipo de Dispositivo', 'Contagem']
+                
+                fig_device = px.bar(device_count, x='Tipo de Dispositivo', y='Contagem',
+                                  title='Quantidade por Tipo de Dispositivo',
+                                  color='Contagem', height=400)
+                st.plotly_chart(fig_device, use_container_width=True)
             
-            # Gráfico de contagem por status
-            st.subheader('Contagem por Status')
-            status_count = df_filtrado['STATUS'].value_counts().reset_index()
-            status_count.columns = ['Status', 'Contagem']
-            
-            fig_status = px.bar(status_count, x='Status', y='Contagem',
-                               title='Quantidade por Status',
-                               color='Contagem', height=400)
-            st.plotly_chart(fig_status, use_container_width=True)
+            with col_dir:
+                # Gráfico de contagem por status
+                st.subheader('Contagem por Status')
+                status_count = df_filtrado['STATUS'].value_counts().reset_index()
+                status_count.columns = ['Status', 'Contagem']
+                
+                fig_status = px.bar(status_count, x='Status', y='Contagem',
+                                  title='Quantidade por Status',
+                                  color='Contagem', height=400)
+                st.plotly_chart(fig_status, use_container_width=True)
             
             # Gráfico de contagem por NODE
             st.subheader('Contagem por NODE')
@@ -316,8 +330,8 @@ def main():
             node_count.columns = ['NODE', 'Contagem']
             
             fig_node = px.bar(node_count, x='NODE', y='Contagem',
-                              title='Quantidade por NODE',
-                              color='Contagem', height=400)
+                             title='Quantidade por NODE',
+                             color='Contagem', height=400)
             st.plotly_chart(fig_node, use_container_width=True)
             
             # Top 10 falhas mais comuns
@@ -333,14 +347,99 @@ def main():
             )
             
             fig_top_falhas = px.bar(top_falhas, x='Descrição Falha', y='Contagem',
-                                   title='Top 10 Falhas Mais Frequentes',
-                                   color='Contagem', height=500)
+                                  title='Top 10 Falhas Mais Frequentes',
+                                  color='Contagem', height=500)
             fig_top_falhas.update_layout(xaxis_tickangle=-45)
             st.plotly_chart(fig_top_falhas, use_container_width=True)
             
             # Tabela com as top 10 falhas
             st.subheader('Detalhes das Top 10 Falhas')
             st.dataframe(top_falhas[['POINT_NAME', 'DESCRIPTION', 'DEVICE_TYPE', 'STATUS', 'Contagem']], use_container_width=True)
+            
+            # Análise de dispositivo específico
+            if dispositivo_selecionado != "Nenhum":
+                st.header(f'Análise do Dispositivo: {dispositivo_selecionado}')
+                
+                # Filtrar dados para o dispositivo selecionado
+                df_dispositivo = df[df['POINT_NAME'] == dispositivo_selecionado].copy()
+                
+                # Garantir que as datas estão no formato correto
+                df_dispositivo['DATA_COMPLETA'] = pd.to_datetime(df_dispositivo['DATE_OBJ'])
+                
+                # Criar um ID único de data+hora para análise temporal
+                df_dispositivo['DATA_HORA'] = df_dispositivo['DATA_COMPLETA'].dt.strftime('%Y-%m-%d %H:%M:%S')
+                
+                # Mostrar estatísticas básicas
+                st.subheader('Estatísticas do Dispositivo')
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Total de Registros", len(df_dispositivo))
+                with col2:
+                    # Contar dias únicos com registro
+                    dias_com_registro = df_dispositivo['DATA_COMPLETA'].dt.date.nunique()
+                    st.metric("Dias com Registro", dias_com_registro)
+                with col3:
+                    # Status mais comum
+                    status_mais_comum = df_dispositivo['STATUS'].value_counts().idxmax() if not df_dispositivo.empty else "N/A"
+                    st.metric("Status Mais Comum", status_mais_comum)
+                
+                # Gráfico de linha temporal - registros ao longo do tempo
+                st.subheader('Evolução Temporal dos Registros')
+                
+                # Agrupar por data e contar registros
+                df_por_data = df_dispositivo.groupby(df_dispositivo['DATA_COMPLETA'].dt.date).size().reset_index()
+                df_por_data.columns = ['Data', 'Contagem']
+                
+                fig_timeline = px.line(df_por_data, x='Data', y='Contagem',
+                                    title=f'Quantidade de Registros por Dia - {dispositivo_selecionado}',
+                                    markers=True)
+                fig_timeline.update_layout(xaxis_title='Data', yaxis_title='Número de Registros')
+                st.plotly_chart(fig_timeline, use_container_width=True)
+                
+                # Gráfico de distribuição por status
+                st.subheader('Distribuição por Status')
+                status_dispositivo = df_dispositivo['STATUS'].value_counts().reset_index()
+                status_dispositivo.columns = ['Status', 'Contagem']
+                
+                fig_status_disp = px.pie(status_dispositivo, values='Contagem', names='Status',
+                                      title=f'Distribuição de Status - {dispositivo_selecionado}')
+                st.plotly_chart(fig_status_disp, use_container_width=True)
+                
+                # Gráfico de heatmap - distribuição de registros por hora do dia e dia da semana
+                st.subheader('Padrões de Horário')
+                
+                # Extrair hora e dia da semana
+                df_dispositivo['Hora'] = df_dispositivo['DATA_COMPLETA'].dt.hour
+                df_dispositivo['Dia_Semana'] = df_dispositivo['DATA_COMPLETA'].dt.day_name()
+                
+                # Ordem dos dias da semana
+                dias_ordem = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+                
+                # Agrupar por hora e dia da semana
+                heatmap_data = df_dispositivo.groupby(['Dia_Semana', 'Hora']).size().reset_index()
+                heatmap_data.columns = ['Dia_Semana', 'Hora', 'Contagem']
+                
+                # Verificar se existem dados suficientes para o heatmap
+                if not heatmap_data.empty and len(heatmap_data) > 1:
+                    # Criar um pivot table para o heatmap
+                    heatmap_pivot = heatmap_data.pivot(index='Dia_Semana', columns='Hora', values='Contagem')
+                    
+                    # Garantir que os dias da semana estão na ordem correta
+                    # Ordenar os dias da semana que existem nos dados
+                    dias_presentes = [dia for dia in dias_ordem if dia in heatmap_pivot.index]
+                    heatmap_pivot = heatmap_pivot.loc[dias_presentes]
+                    
+                    fig_heatmap = px.imshow(heatmap_pivot,
+                                         labels=dict(x="Hora do Dia", y="Dia da Semana", color="Número de Registros"),
+                                         title=f'Distribuição de Registros por Hora e Dia - {dispositivo_selecionado}',
+                                         color_continuous_scale='YlOrRd')
+                    st.plotly_chart(fig_heatmap, use_container_width=True)
+                else:
+                    st.info("Dados insuficientes para gerar o mapa de calor de horários.")
+                
+                # Tabela com histórico completo do dispositivo
+                st.subheader('Histórico Completo do Dispositivo')
+                st.dataframe(df_dispositivo.drop(columns=['DATE_OBJ', 'DATA_COMPLETA', 'Hora', 'Dia_Semana']), use_container_width=True)
             
             # Botão para download dos dados processados
             csv = df_filtrado.drop(columns=['DATE_OBJ', 'DATA_COMPLETA']).to_csv(index=False, encoding='utf-8-sig', sep=';')
