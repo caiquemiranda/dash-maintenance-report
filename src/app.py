@@ -4,6 +4,7 @@ import streamlit as st
 import re
 import pandas as pd
 import datetime
+import plotly.express as px
 
 def tentar_decodificar(arquivo):
     """Tenta decodificar o arquivo com diferentes codificações"""
@@ -170,7 +171,10 @@ def processar_arquivo(conteudo):
         if coluna not in df.columns:
             df[coluna] = 'N/A'
     
-    return df[colunas]
+    # Converter a coluna de data para datetime
+    df['DATE_OBJ'] = pd.to_datetime(df['DATE'], format='%d/%m/%Y', errors='coerce')
+    
+    return df[colunas + ['DATE_OBJ']]
 
 def main():
     st.title('Processador de Logs TSW')
@@ -186,41 +190,101 @@ def main():
             # Processar o arquivo e criar DataFrame
             df = processar_arquivo(conteudo)
             
+            # Adicionar filtros de data
+            st.sidebar.header("Filtros")
+            
+            # Extrair datas únicas
+            df['DIA'] = pd.to_datetime(df['DATE_OBJ']).dt.day
+            df['MES'] = pd.to_datetime(df['DATE_OBJ']).dt.month
+            df['ANO'] = pd.to_datetime(df['DATE_OBJ']).dt.year
+            
+            # Lista de dias, meses e anos disponíveis
+            dias_disponiveis = sorted(df['DIA'].dropna().unique().tolist())
+            meses_disponiveis = sorted(df['MES'].dropna().unique().tolist())
+            anos_disponiveis = sorted(df['ANO'].dropna().unique().tolist())
+            
+            # Criar filtros
+            dia_selecionado = st.sidebar.selectbox("Dia", ["Todos"] + dias_disponiveis)
+            mes_selecionado = st.sidebar.selectbox("Mês", ["Todos"] + meses_disponiveis)
+            ano_selecionado = st.sidebar.selectbox("Ano", ["Todos"] + anos_disponiveis)
+            
+            # Aplicar filtros
+            df_filtrado = df.copy()
+            
+            if dia_selecionado != "Todos":
+                df_filtrado = df_filtrado[df_filtrado['DIA'] == dia_selecionado]
+            
+            if mes_selecionado != "Todos":
+                df_filtrado = df_filtrado[df_filtrado['MES'] == mes_selecionado]
+                
+            if ano_selecionado != "Todos":
+                df_filtrado = df_filtrado[df_filtrado['ANO'] == ano_selecionado]
+            
             # Exibir os dados originais
             with st.expander("Ver conteúdo original"):
                 st.text(conteudo)
             
             # Exibir a tabela processada
             st.subheader('Dados Processados')
-            st.dataframe(df, use_container_width=True)
+            st.dataframe(df_filtrado.drop(columns=['DATE_OBJ', 'DIA', 'MES', 'ANO']), use_container_width=True)
             
             # Adicionar algumas métricas
             st.subheader('Métricas')
             col1, col2, col3 = st.columns(3)
             
             with col1:
-                st.metric("Total de Registros", len(df))
+                st.metric("Total de Registros", len(df_filtrado))
             with col2:
-                bad_answers = len(df[df['STATUS'].str.contains('BAD ANSWER', na=False)])
+                bad_answers = len(df_filtrado[df_filtrado['STATUS'].str.contains('BAD ANSWER', na=False)])
                 st.metric("Bad Answers", bad_answers)
             with col3:
-                short_circuits = len(df[df['STATUS'].str.contains('SHORT CIRCUIT', na=False)])
+                short_circuits = len(df_filtrado[df_filtrado['STATUS'].str.contains('SHORT CIRCUIT', na=False)])
                 st.metric("Short Circuit Troubles", short_circuits)
             
             # Gráfico de contagem por tipo de dispositivo
             st.subheader('Contagem por Tipo de Dispositivo')
-            device_count = df['DEVICE_TYPE'].value_counts().reset_index()
+            device_count = df_filtrado['DEVICE_TYPE'].value_counts().reset_index()
             device_count.columns = ['Tipo de Dispositivo', 'Contagem']
-            st.bar_chart(device_count.set_index('Tipo de Dispositivo'))
+            
+            fig_device = px.bar(device_count, x='Tipo de Dispositivo', y='Contagem',
+                               title='Quantidade por Tipo de Dispositivo',
+                               color='Contagem', height=400)
+            st.plotly_chart(fig_device, use_container_width=True)
             
             # Gráfico de contagem por status
             st.subheader('Contagem por Status')
-            status_count = df['STATUS'].value_counts().reset_index()
+            status_count = df_filtrado['STATUS'].value_counts().reset_index()
             status_count.columns = ['Status', 'Contagem']
-            st.bar_chart(status_count.set_index('Status'))
+            
+            fig_status = px.bar(status_count, x='Status', y='Contagem',
+                               title='Quantidade por Status',
+                               color='Contagem', height=400)
+            st.plotly_chart(fig_status, use_container_width=True)
+            
+            # Top 10 falhas mais comuns
+            st.subheader('Top 10 Falhas Mais Frequentes')
+            
+            # Agrupar por POINT_NAME, DESCRIPTION, DEVICE_TYPE e STATUS
+            top_falhas = df_filtrado.groupby(['POINT_NAME', 'DESCRIPTION', 'DEVICE_TYPE', 'STATUS']).size().reset_index(name='Contagem')
+            top_falhas = top_falhas.sort_values('Contagem', ascending=False).head(10)
+            
+            # Criar uma coluna de descrição mais amigável
+            top_falhas['Descrição Falha'] = top_falhas.apply(
+                lambda x: f"{x['POINT_NAME']} - {x['DESCRIPTION']} ({x['DEVICE_TYPE']}): {x['STATUS']}", axis=1
+            )
+            
+            fig_top_falhas = px.bar(top_falhas, x='Descrição Falha', y='Contagem',
+                                   title='Top 10 Falhas Mais Frequentes',
+                                   color='Contagem', height=500)
+            fig_top_falhas.update_layout(xaxis_tickangle=-45)
+            st.plotly_chart(fig_top_falhas, use_container_width=True)
+            
+            # Tabela com as top 10 falhas
+            st.subheader('Detalhes das Top 10 Falhas')
+            st.dataframe(top_falhas[['POINT_NAME', 'DESCRIPTION', 'DEVICE_TYPE', 'STATUS', 'Contagem']], use_container_width=True)
             
             # Botão para download dos dados processados
-            csv = df.to_csv(index=False, encoding='utf-8-sig', sep=';')
+            csv = df_filtrado.drop(columns=['DATE_OBJ', 'DIA', 'MES', 'ANO']).to_csv(index=False, encoding='utf-8-sig', sep=';')
             st.download_button(
                 label="Download dados processados (CSV)",
                 data=csv,
