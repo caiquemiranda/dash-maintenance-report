@@ -4,17 +4,18 @@ import streamlit as st
 import pandas as pd
 import datetime
 import numpy as np
+import os
+import sys
 
-# Importar módulos personalizados
-from .utils import tentar_decodificar
-from .parser import processar_arquivo
-from .visualizations import (
-    criar_grafico_dispositivos, 
-    criar_grafico_status, 
-    criar_grafico_node, 
-    criar_grafico_top_falhas
-)
-from .device_analysis import analisar_dispositivo
+# Adicionar o diretório pai ao path para encontrar os módulos independentemente 
+# de como o script é executado
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+# Importar módulos com importações absolutas
+import src.utils as utils
+import src.parser as parser
+import src.visualizations as viz
+import src.device_analysis as device_analysis
 
 def main():
     st.set_page_config(page_title="Processador de Logs TSW", page_icon="📊", layout="wide")
@@ -26,10 +27,10 @@ def main():
     if arquivo is not None:
         try:
             # Tentar decodificar o arquivo com diferentes codificações
-            conteudo = tentar_decodificar(arquivo)
+            conteudo = utils.tentar_decodificar(arquivo)
             
             # Processar o arquivo e criar DataFrame
-            df = processar_arquivo(conteudo)
+            df = parser.processar_arquivo(conteudo)
             
             # Adicionar filtros na barra lateral
             st.sidebar.header("Filtros")
@@ -145,23 +146,23 @@ def main():
             with col_esq:
                 # Gráfico de contagem por tipo de dispositivo
                 st.subheader('Contagem por Tipo de Dispositivo')
-                fig_device = criar_grafico_dispositivos(df_filtrado)
+                fig_device = viz.criar_grafico_dispositivos(df_filtrado)
                 st.plotly_chart(fig_device, use_container_width=True)
             
             with col_dir:
                 # Gráfico de contagem por status
                 st.subheader('Contagem por Status')
-                fig_status = criar_grafico_status(df_filtrado)
+                fig_status = viz.criar_grafico_status(df_filtrado)
                 st.plotly_chart(fig_status, use_container_width=True)
             
             # Gráfico de contagem por NODE
             st.subheader('Contagem por NODE')
-            fig_node = criar_grafico_node(df_filtrado)
+            fig_node = viz.criar_grafico_node(df_filtrado)
             st.plotly_chart(fig_node, use_container_width=True)
             
             # Top 10 falhas mais comuns
             st.subheader('Top 10 Falhas Mais Frequentes')
-            fig_top_falhas, top_falhas = criar_grafico_top_falhas(df_filtrado)
+            fig_top_falhas, top_falhas = viz.criar_grafico_top_falhas(df_filtrado)
             st.plotly_chart(fig_top_falhas, use_container_width=True)
             
             # Tabela com as top 10 falhas
@@ -171,7 +172,7 @@ def main():
             # Análise de dispositivo específico
             if dispositivo_selecionado != "Nenhum":
                 st.header(f'Análise do Dispositivo: {dispositivo_selecionado}')
-                analisar_dispositivo(df, dispositivo_selecionado)
+                device_analysis.analisar_dispositivo(df, dispositivo_selecionado)
             
             # Botão para download dos dados processados
             csv = df_filtrado.drop(columns=['DATE_OBJ', 'DATA_COMPLETA']).to_csv(index=False, encoding='utf-8-sig', sep=';')

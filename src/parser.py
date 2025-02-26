@@ -1,6 +1,13 @@
 import pandas as pd
 import re
-from .utils import converter_data
+import sys
+import os
+
+# Adicionar o diretório pai ao path para encontrar os módulos
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+# Importar com importação absoluta
+import src.utils as utils
 
 def processar_arquivo(conteudo):
     """Processa o arquivo de log e retorna um DataFrame"""
@@ -84,7 +91,7 @@ def processar_arquivo(conteudo):
                             ano = data_match.group(4)
                             
                             # Converter para formato DD/MM/YYYY
-                            registro['DATE'] = converter_data(dia_semana, dia, mes_abrev, ano)
+                            registro['DATE'] = utils.converter_data(dia_semana, dia, mes_abrev, ano)
                         
                         if node_match:
                             registro['NODE'] = node_match.group(1)
