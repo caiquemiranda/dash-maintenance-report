@@ -5,6 +5,7 @@ import re
 import pandas as pd
 import datetime
 import plotly.express as px
+import numpy as np
 
 def tentar_decodificar(arquivo):
     """Tenta decodificar o arquivo com diferentes codificações"""
@@ -175,6 +176,7 @@ def processar_arquivo(conteudo):
     return df[colunas + ['DATE_OBJ']]
 
 def main():
+    st.set_page_config(page_title="Processador de Logs TSW", page_icon="📊", layout="wide")
     st.title('Processador de Logs TSW')
     
     # Upload do arquivo
@@ -198,27 +200,37 @@ def main():
             
             # Extrair datas para os filtros de período
             df['DATA_COMPLETA'] = pd.to_datetime(df['DATE_OBJ'])
-            datas_disponiveis = sorted(df['DATA_COMPLETA'].dropna().unique())
             
-            if len(datas_disponiveis) > 0:
-                data_min = datas_disponiveis.min()
-                data_max = datas_disponiveis.max()
+            # Corrigir o problema com as datas
+            if not df['DATA_COMPLETA'].empty and not df['DATA_COMPLETA'].isna().all():
+                # Converter para lista de timestamps e usar min/max do Python
+                datas_validas = [d for d in df['DATA_COMPLETA'] if pd.notna(d)]
                 
-                # Filtro de período
-                st.sidebar.subheader("Período de Datas")
-                data_inicio = st.sidebar.date_input("Data Inicial", data_min, min_value=data_min, max_value=data_max)
-                data_fim = st.sidebar.date_input("Data Final", data_max, min_value=data_min, max_value=data_max)
-                
-                # Garantir que a data final não seja anterior à data inicial
-                if data_fim < data_inicio:
-                    st.sidebar.error("Data final deve ser posterior à data inicial!")
-                    data_fim = data_inicio
+                if datas_validas:
+                    data_min = min(datas_validas).date()
+                    data_max = max(datas_validas).date()
+                    
+                    # Filtro de período
+                    st.sidebar.subheader("Período de Datas")
+                    data_inicio = st.sidebar.date_input("Data Inicial", data_min, min_value=data_min, max_value=data_max)
+                    data_fim = st.sidebar.date_input("Data Final", data_max, min_value=data_min, max_value=data_max)
+                    
+                    # Garantir que a data final não seja anterior à data inicial
+                    if data_fim < data_inicio:
+                        st.sidebar.error("Data final deve ser posterior à data inicial!")
+                        data_fim = data_inicio
+                else:
+                    # Caso não existam datas válidas
+                    data_hoje = datetime.date.today()
+                    data_inicio = data_hoje
+                    data_fim = data_hoje
             else:
                 # Caso não existam datas válidas
-                data_inicio = datetime.date.today()
-                data_fim = datetime.date.today()
+                data_hoje = datetime.date.today()
+                data_inicio = data_hoje
+                data_fim = data_hoje
             
-            # Filtros de NODE (novo), DEVICE_TYPE e STATUS (agora como multiselect)
+            # Filtros de NODE, DEVICE_TYPE e STATUS
             node_selecionado = st.sidebar.selectbox("NODE", ["Todos"] + nodes_disponiveis)
             
             device_types_selecionados = st.sidebar.multiselect(
@@ -237,8 +249,10 @@ def main():
             df_filtrado = df.copy()
             
             # Filtro de período
-            df_filtrado = df_filtrado[(df_filtrado['DATA_COMPLETA'].dt.date >= data_inicio) & 
-                                     (df_filtrado['DATA_COMPLETA'].dt.date <= data_fim)]
+            df_filtrado = df_filtrado[
+                (df_filtrado['DATA_COMPLETA'].dt.date >= data_inicio) & 
+                (df_filtrado['DATA_COMPLETA'].dt.date <= data_fim)
+            ]
             
             # Filtro de NODE
             if node_selecionado != "Todos":
