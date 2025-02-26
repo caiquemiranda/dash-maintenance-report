@@ -48,49 +48,66 @@ def processar_arquivo(conteudo):
             # Primeira linha: número e horário
             linha1_match = re.match(r'(\d+)\s+(\d{2}:\d{2}:\d{2})', linhas[i])
             if linha1_match:
+                # Inicializar registro com valores padrão
                 registro = {
                     'Sequência': linha1_match.group(1),
                     'Horário': linha1_match.group(2),
+                    'Data': 'N/A',
+                    'Dispositivo': 'N/A',
+                    'Localização': 'N/A',
                     'Node': header_info.get('Node', 'N/A'),
+                    'Node_Dispositivo': 'N/A',
+                    'Tipo': 'N/A',
+                    'Status': 'N/A',
                     'Revisão': header_info.get('Revision', 'N/A'),
                     'Data_Log': header_info.get('Data_Log', 'N/A'),
                 }
                 
                 # Segunda linha: informações do dispositivo
-                linha2 = linhas[i+1].strip()
-                data_match = re.search(r'SUN\s+(\d{2}-\w{3}-\d{2})', linha2)
-                if data_match:
-                    registro['Data'] = data_match.group(1)
-                
-                device_match = re.search(r'(\d:\w+\-\d+\-\d+)\s+ESCRITORIO\s+ATENDIMENTO\s+RH\s+-\s+(\w+)', linha2)
-                if device_match:
-                    registro['Dispositivo'] = device_match.group(1)
-                    registro['Localização'] = device_match.group(2)
+                if i + 1 < len(linhas):
+                    linha2 = linhas[i+1].strip()
+                    data_match = re.search(r'SUN\s+(\d{2}-\w{3}-\d{2})', linha2)
+                    if data_match:
+                        registro['Data'] = data_match.group(1)
+                    
+                    # Tentar diferentes padrões para dispositivo e localização
+                    device_match = re.search(r'([\d:][\w\-]+)\s+ESCRITORIO\s+ATENDIMENTO\s+RH\s+-\s+(\w+)', linha2)
+                    if device_match:
+                        registro['Dispositivo'] = device_match.group(1)
+                        registro['Localização'] = device_match.group(2)
                 
                 # Terceira linha: NODE e status
-                linha3 = linhas[i+2].strip()
-                node_match = re.search(r'\(NODE\s+(\d+)\)', linha3)
-                if node_match:
-                    registro['Node_Dispositivo'] = node_match.group(1)
-                
-                registro['Tipo'] = 'SMOKE DETECTOR' if 'SMOKE DETECTOR' in linha3 else 'OUTRO'
-                registro['Status'] = 'BAD ANSWER' if 'BAD ANSWER' in linha3 else 'OK'
+                if i + 2 < len(linhas):
+                    linha3 = linhas[i+2].strip()
+                    node_match = re.search(r'\(NODE\s+(\d+)\)', linha3)
+                    if node_match:
+                        registro['Node_Dispositivo'] = node_match.group(1)
+                    
+                    registro['Tipo'] = 'SMOKE DETECTOR' if 'SMOKE DETECTOR' in linha3 else 'OUTRO'
+                    registro['Status'] = 'BAD ANSWER' if 'BAD ANSWER' in linha3 else 'OK'
                 
                 dados.append(registro)
                 i += 3
             else:
                 i += 1
-        except (AttributeError, IndexError):
+        except (AttributeError, IndexError) as e:
+            print(f"Erro ao processar linha {i}: {str(e)}")
             i += 1
     
-    df = pd.DataFrame(dados)
-    
-    # Organizar as colunas em uma ordem lógica
+    # Criar DataFrame com todas as colunas necessárias
     colunas = [
         'Sequência', 'Data', 'Horário', 'Dispositivo', 'Localização',
         'Tipo', 'Status', 'Node', 'Node_Dispositivo', 'Revisão', 'Data_Log'
     ]
     
+    df = pd.DataFrame(dados)
+    
+    # Garantir que todas as colunas existam
+    for coluna in colunas:
+        if coluna not in df.columns:
+            df[coluna] = 'N/A'
+    
+    # Retornar apenas as colunas desejadas na ordem correta
     return df[colunas]
 
 def main():
