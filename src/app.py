@@ -20,51 +20,78 @@ def processar_arquivo(conteudo):
     # Dividir o conteúdo em linhas
     linhas = conteudo.split('\n')
     
-    # Pular as primeiras 6 linhas de cabeçalho
+    # Extrair informações do cabeçalho
+    header_info = {}
+    for linha in linhas[:6]:
+        if 'BRIDTFPP' in linha:
+            match = re.search(r'Node\s+(\d+)\s+Rev\s+(\d+)\s+(\w+)\s+(\d{2}-\w{3}-\d{2})\s+(\d{2}:\d{2}:\d{2})', linha)
+            if match:
+                header_info['Node'] = match.group(1)
+                header_info['Revision'] = match.group(2)
+                header_info['Data_Log'] = match.group(4)
+                header_info['Hora_Log'] = match.group(5)
+    
+    # Pular as linhas do cabeçalho
     linhas = linhas[6:]
     
     # Lista para armazenar os dados processados
     dados = []
     
-    # Processar as linhas em grupos de 3
+    # Processar as linhas em grupos
     i = 0
     while i < len(linhas):
-        if not linhas[i].strip():  # Pular linhas vazias
+        if not linhas[i].strip():
             i += 1
             continue
             
         try:
-            # Primeira linha contém número e horário
+            # Primeira linha: número e horário
             linha1_match = re.match(r'(\d+)\s+(\d{2}:\d{2}:\d{2})', linhas[i])
             if linha1_match:
-                numero = linha1_match.group(1)
-                horario = linha1_match.group(2)
+                registro = {
+                    'Sequência': linha1_match.group(1),
+                    'Horário': linha1_match.group(2),
+                    'Node': header_info.get('Node', 'N/A'),
+                    'Revisão': header_info.get('Revision', 'N/A'),
+                    'Data_Log': header_info.get('Data_Log', 'N/A'),
+                }
                 
-                # Segunda linha contém a data e localização
+                # Segunda linha: informações do dispositivo
                 linha2 = linhas[i+1].strip()
-                data = re.search(r'SUN\s+(\d{2}-\w{3}-\d{2})', linha2).group(1)
-                localizacao = re.search(r'ESCRITORIO\s+ATENDIMENTO\s+RH\s+-\s+(\w+)', linha2)
-                localizacao = localizacao.group(1) if localizacao else "N/A"
+                data_match = re.search(r'SUN\s+(\d{2}-\w{3}-\d{2})', linha2)
+                if data_match:
+                    registro['Data'] = data_match.group(1)
                 
-                # Terceira linha contém o status
+                device_match = re.search(r'(\d:\w+\-\d+\-\d+)\s+ESCRITORIO\s+ATENDIMENTO\s+RH\s+-\s+(\w+)', linha2)
+                if device_match:
+                    registro['Dispositivo'] = device_match.group(1)
+                    registro['Localização'] = device_match.group(2)
+                
+                # Terceira linha: NODE e status
                 linha3 = linhas[i+2].strip()
-                status = "BAD ANSWER" if "BAD ANSWER" in linha3 else "OK"
+                node_match = re.search(r'\(NODE\s+(\d+)\)', linha3)
+                if node_match:
+                    registro['Node_Dispositivo'] = node_match.group(1)
                 
-                dados.append({
-                    'Número': numero,
-                    'Data': data,
-                    'Horário': horario,
-                    'Localização': localizacao,
-                    'Status': status
-                })
+                registro['Tipo'] = 'SMOKE DETECTOR' if 'SMOKE DETECTOR' in linha3 else 'OUTRO'
+                registro['Status'] = 'BAD ANSWER' if 'BAD ANSWER' in linha3 else 'OK'
                 
-                i += 3  # Avançar para o próximo grupo de 3 linhas
+                dados.append(registro)
+                i += 3
             else:
                 i += 1
         except (AttributeError, IndexError):
             i += 1
     
-    return pd.DataFrame(dados)
+    df = pd.DataFrame(dados)
+    
+    # Organizar as colunas em uma ordem lógica
+    colunas = [
+        'Sequência', 'Data', 'Horário', 'Dispositivo', 'Localização',
+        'Tipo', 'Status', 'Node', 'Node_Dispositivo', 'Revisão', 'Data_Log'
+    ]
+    
+    return df[colunas]
 
 def main():
     st.title('Processador de Logs TSW')
@@ -81,22 +108,22 @@ def main():
             df = processar_arquivo(conteudo)
             
             # Exibir os dados originais
-            st.subheader('Conteúdo Original')
-            st.text(conteudo)
+            with st.expander("Ver conteúdo original"):
+                st.text(conteudo)
             
             # Exibir a tabela processada
             st.subheader('Dados Processados')
-            st.dataframe(df)
+            st.dataframe(df, use_container_width=True)
             
             # Adicionar algumas métricas
             st.subheader('Métricas')
-            col1, col2 = st.columns(2)
+            col1, col2, col3 = st.columns(3)
             
             with col1:
                 st.metric("Total de Registros", len(df))
-                st.metric("Bad Answers", len(df[df['Status'] == 'BAD ANSWER']))
-            
             with col2:
+                st.metric("Bad Answers", len(df[df['Status'] == 'BAD ANSWER']))
+            with col3:
                 st.metric("Registros OK", len(df[df['Status'] == 'OK']))
             
             # Botão para download dos dados processados
