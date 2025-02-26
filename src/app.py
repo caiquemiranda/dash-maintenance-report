@@ -27,100 +27,134 @@ def processar_arquivo(conteudo):
     # Lista para armazenar os dados processados
     dados = []
     
-    # Processar as linhas em grupos de 4
+    # Processar as linhas
     i = 0
     while i < len(linhas):
+        # Pular linhas vazias
         if not linhas[i].strip():
             i += 1
             continue
             
         try:
-            # Primeira linha: ID e TIME
-            linha1_match = re.match(r'(\d+)\s+(\d{2}:\d{2}:\d{2})', linhas[i])
+            # Verificar se a linha começa com um ID e horário
+            linha1_match = re.match(r'^\s*(\d+)\s+(\d{2}:\d{2}:\d{2})', linhas[i])
             if linha1_match:
+                id_registro = linha1_match.group(1)
+                horario = linha1_match.group(2)
+                
+                # Inicializar o registro com valores padrão
                 registro = {
-                    'ID': linha1_match.group(1),
-                    'TIME': linha1_match.group(2)
+                    'ID': id_registro,
+                    'TIME': horario,
+                    'POINT_NAME': 'N/A',
+                    'DESCRIPTION': 'N/A',
+                    'DATE': 'N/A',
+                    'NODE': 'N/A',
+                    'DEVICE_TYPE': 'N/A',
+                    'STATUS': 'N/A'
                 }
                 
-                # Obter o resto da primeira linha (início da DESCRIPTION)
-                point_descr = re.search(r'\d{2}:\d{2}:\d{2}\s+(.*)', linhas[i])
-                if point_descr:
-                    point_desc_texto = point_descr.group(1).strip()
-                    
-                    # Extrair o POINT_NAME e o início da DESCRIPTION
-                    point_match = re.match(r'([\d:]\S+)\s+(.*)', point_desc_texto)
+                # Extrair POINT_NAME e DESCRIPTION
+                linha_resto = linhas[i][len(id_registro):].strip()
+                linha_resto = linha_resto[8:].strip()  # Remover o horário (8 caracteres: HH:MM:SS)
+                
+                if linha_resto:
+                    # Tentar extrair o POINT_NAME
+                    point_match = re.match(r'([\d:][^\ ]+)', linha_resto)
                     if point_match:
                         registro['POINT_NAME'] = point_match.group(1)
-                        description = point_match.group(2)
-                
-                # Segunda linha: continuação da DESCRIPTION
-                if i + 1 < len(linhas) and linhas[i+1].strip():
-                    desc_continuation = linhas[i+1].strip()
-                    if description:
-                        # Juntar as duas partes da descrição
-                        description = description + " " + desc_continuation
+                        description = linha_resto[len(point_match.group(1)):].strip()
+                        registro['DESCRIPTION'] = description
                     else:
-                        description = desc_continuation
-                    
-                registro['DESCRIPTION'] = description
+                        # Se não conseguir extrair um POINT_NAME, considerar tudo como DESCRIPTION
+                        registro['DESCRIPTION'] = linha_resto
                 
-                # Terceira linha: DATA e NODE
-                if i + 2 < len(linhas) and linhas[i+2].strip():
-                    linha3 = linhas[i+2].strip()
+                # Verificar se existem mais linhas para este registro
+                linhas_registro = [linhas[i]]
+                j = i + 1
+                linha_data_encontrada = False
+                linha_device_encontrada = False
+                
+                # Coletar todas as linhas do registro atual até encontrar o próximo registro ou fim do arquivo
+                while j < len(linhas):
+                    linha_atual = linhas[j].strip()
                     
-                    # Extrair DATA
-                    data_match = re.search(r'SUN\s+(\d{2})-(\w{3})-(\d{2})', linha3)
-                    if data_match:
-                        dia = data_match.group(1)
-                        mes_abrev = data_match.group(2)
-                        ano = data_match.group(3)
+                    # Se a linha começar com um número, é o início do próximo registro
+                    if re.match(r'^\s*\d+\s+\d{2}:\d{2}:\d{2}', linhas[j]):
+                        break
+                    
+                    if linha_atual:
+                        linhas_registro.append(linhas[j])
                         
-                        # Converter o mês de abreviação para número
-                        meses = {'JAN': '01', 'FEB': '02', 'MAR': '03', 'APR': '04', 'MAY': '05', 'JUN': '06',
-                                'JUL': '07', 'AUG': '08', 'SEP': '09', 'OCT': '10', 'NOV': '11', 'DEC': '12'}
-                        mes = meses.get(mes_abrev, '01')
+                        # Verificar se é uma linha com DATA e NODE
+                        data_match = re.search(r'(MON|TUE|WED|THU|FRI|SAT|SUN)\s+(\d{2})-(\w{3})-(\d{2})', linha_atual)
+                        node_match = re.search(r'\(NODE\s+(\d+)\)', linha_atual)
                         
-                        # Formatar a data como DD/MM/YYYY
-                        registro['DATE'] = f"{dia}/{mes}/20{ano}"
+                        if data_match and not linha_data_encontrada:
+                            linha_data_encontrada = True
+                            dia_semana = data_match.group(1)
+                            dia = data_match.group(2)
+                            mes_abrev = data_match.group(3)
+                            ano = data_match.group(4)
+                            
+                            # Converter o mês de abreviação para número
+                            meses = {'JAN': '01', 'FEB': '02', 'MAR': '03', 'APR': '04', 'MAY': '05', 'JUN': '06',
+                                    'JUL': '07', 'AUG': '08', 'SEP': '09', 'OCT': '10', 'NOV': '11', 'DEC': '12'}
+                            mes = meses.get(mes_abrev, '01')
+                            
+                            # Formatar a data como DD/MM/YYYY
+                            registro['DATE'] = f"{dia}/{mes}/20{ano}"
+                        
+                        if node_match:
+                            registro['NODE'] = node_match.group(1)
+                        
+                        # Verificar se é uma linha com DEVICE_TYPE e STATUS
+                        if not linha_device_encontrada and not data_match:
+                            # Se a linha não contém data e não está vazia, pode ser a linha de device/status
+                            device_types = [
+                                'SMOKE DETECTOR', 'Quick Alert Signal', 'AUXILIARY RELAY', 'PULL STATION',
+                                'SUPERVISORY MONITOR', 'SIGNAL CIRCUIT', 'MAPNET ISOLATOR', 'FIRE MONITOR ZONE'
+                            ]
+                            
+                            for device in device_types:
+                                if device in linha_atual:
+                                    linha_device_encontrada = True
+                                    registro['DEVICE_TYPE'] = device
+                                    
+                                    # Extrair STATUS - tudo que vem depois do DEVICE_TYPE
+                                    status_part = linha_atual[linha_atual.find(device) + len(device):].strip()
+                                    if status_part:
+                                        registro['STATUS'] = status_part
+                                    break
+                            
+                            # Caso especial para linhas que não contêm um DEVICE_TYPE conhecido
+                            if not linha_device_encontrada and 'TROUBLE GLOBAL' in linha_atual:
+                                registro['DEVICE_TYPE'] = 'TROUBLE GLOBAL'
+                                if 'ACKNOWLEDGE' in linha_atual:
+                                    registro['STATUS'] = 'ACKNOWLEDGE'
                     
-                    # Extrair NODE
-                    node_match = re.search(r'\(NODE\s+(\d+)\)', linha3)
-                    if node_match:
-                        registro['NODE'] = node_match.group(1)
+                    j += 1
                 
-                # Quarta linha: DEVICE_TYPE e STATUS
-                if i + 3 < len(linhas) and linhas[i+3].strip():
-                    linha4 = linhas[i+3].strip()
+                # Atualizar a descrição com linhas adicionais se necessário
+                if len(linhas_registro) > 1 and 'DESCRIPTION' in registro:
+                    # Verificar se há linhas de continuação da descrição
+                    descricao_completa = registro['DESCRIPTION']
+                    for linha in linhas_registro[1:]:
+                        if not re.search(r'(MON|TUE|WED|THU|FRI|SAT|SUN)\s+\d{2}-\w{3}-\d{2}', linha) and \
+                           not any(device in linha for device in ['SMOKE DETECTOR', 'Quick Alert Signal', 'AUXILIARY RELAY']):
+                            if not linha.strip().startswith('(NODE'):
+                                # Esta linha pode ser continuação da descrição
+                                possivel_continuacao = linha.strip()
+                                if possivel_continuacao and not possivel_continuacao.startswith(tuple(device_types)):
+                                    if descricao_completa != 'N/A':
+                                        descricao_completa += " " + possivel_continuacao
+                                    else:
+                                        descricao_completa = possivel_continuacao
                     
-                    # Extrair DEVICE_TYPE
-                    if 'SMOKE DETECTOR' in linha4:
-                        registro['DEVICE_TYPE'] = 'SMOKE DETECTOR'
-                    elif 'Quick Alert Signal' in linha4:
-                        registro['DEVICE_TYPE'] = 'Quick Alert Signal'
-                    elif 'AUXILIARY RELAY' in linha4:
-                        registro['DEVICE_TYPE'] = 'AUXILIARY RELAY'
-                    else:
-                        device_match = re.match(r'([^A-Z]+)(?:\s+[A-Z]+\s+[A-Z]+)?', linha4)
-                        if device_match:
-                            registro['DEVICE_TYPE'] = device_match.group(1).strip()
-                        else:
-                            registro['DEVICE_TYPE'] = 'N/A'
-                    
-                    # Extrair STATUS
-                    if 'BAD ANSWER' in linha4:
-                        registro['STATUS'] = 'BAD ANSWER'
-                    elif 'SHORT CIRCUIT TROUBLE' in linha4:
-                        registro['STATUS'] = 'SHORT CIRCUIT TROUBLE'
-                    else:
-                        status_match = re.search(r'[A-Z]+\s+[A-Z]+$', linha4)
-                        if status_match:
-                            registro['STATUS'] = status_match.group(0)
-                        else:
-                            registro['STATUS'] = 'N/A'
+                    registro['DESCRIPTION'] = descricao_completa
                 
                 dados.append(registro)
-                i += 4  # Avançar para o próximo grupo de 4 linhas
+                i = j  # Avançar para o próximo registro
             else:
                 i += 1
         except Exception as e:
@@ -167,15 +201,23 @@ def main():
             with col1:
                 st.metric("Total de Registros", len(df))
             with col2:
-                st.metric("Bad Answers", len(df[df['STATUS'] == 'BAD ANSWER']))
+                bad_answers = len(df[df['STATUS'].str.contains('BAD ANSWER', na=False)])
+                st.metric("Bad Answers", bad_answers)
             with col3:
-                st.metric("Short Circuit Troubles", len(df[df['STATUS'] == 'SHORT CIRCUIT TROUBLE']))
+                short_circuits = len(df[df['STATUS'].str.contains('SHORT CIRCUIT', na=False)])
+                st.metric("Short Circuit Troubles", short_circuits)
             
             # Gráfico de contagem por tipo de dispositivo
             st.subheader('Contagem por Tipo de Dispositivo')
             device_count = df['DEVICE_TYPE'].value_counts().reset_index()
             device_count.columns = ['Tipo de Dispositivo', 'Contagem']
             st.bar_chart(device_count.set_index('Tipo de Dispositivo'))
+            
+            # Gráfico de contagem por status
+            st.subheader('Contagem por Status')
+            status_count = df['STATUS'].value_counts().reset_index()
+            status_count.columns = ['Status', 'Contagem']
+            st.bar_chart(status_count.set_index('Status'))
             
             # Botão para download dos dados processados
             csv = df.to_csv(index=False, encoding='utf-8-sig', sep=';')
