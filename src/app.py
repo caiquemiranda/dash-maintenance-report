@@ -114,7 +114,8 @@ def processar_arquivo(conteudo):
                             # Se a linha não contém data e não está vazia, pode ser a linha de device/status
                             device_types = [
                                 'SMOKE DETECTOR', 'Quick Alert Signal', 'AUXILIARY RELAY', 'PULL STATION',
-                                'SUPERVISORY MONITOR', 'SIGNAL CIRCUIT', 'MAPNET ISOLATOR', 'FIRE MONITOR ZONE'
+                                'SUPERVISORY MONITOR', 'SIGNAL CIRCUIT', 'MAPNET ISOLATOR', 'FIRE MONITOR ZONE',
+                                'TROUBLE RELAY'  # Adicionado para o novo caso
                             ]
                             
                             for device in device_types:
@@ -140,17 +141,14 @@ def processar_arquivo(conteudo):
                 if len(linhas_registro) > 1 and 'DESCRIPTION' in registro:
                     # Verificar se há linhas de continuação da descrição
                     descricao_completa = registro['DESCRIPTION']
-                    for linha in linhas_registro[1:]:
-                        if not re.search(r'(MON|TUE|WED|THU|FRI|SAT|SUN)\s+\d{2}-\w{3}-\d{2}', linha) and \
-                           not any(device in linha for device in ['SMOKE DETECTOR', 'Quick Alert Signal', 'AUXILIARY RELAY']):
-                            if not linha.strip().startswith('(NODE'):
-                                # Esta linha pode ser continuação da descrição
-                                possivel_continuacao = linha.strip()
-                                if possivel_continuacao and not possivel_continuacao.startswith(tuple(device_types)):
-                                    if descricao_completa != 'N/A':
-                                        descricao_completa += " " + possivel_continuacao
-                                    else:
-                                        descricao_completa = possivel_continuacao
+                    
+                    # Para o caso específico de TROUBLE RELAY, concatenar a segunda linha à descrição
+                    segunda_linha = linhas_registro[1].strip() if len(linhas_registro) > 1 else ""
+                    if segunda_linha and not re.search(r'(MON|TUE|WED|THU|FRI|SAT|SUN)', segunda_linha) and not any(device in segunda_linha for device in device_types):
+                        if descricao_completa != 'N/A':
+                            descricao_completa += " " + segunda_linha
+                        else:
+                            descricao_completa = segunda_linha
                     
                     registro['DESCRIPTION'] = descricao_completa
                 
@@ -208,6 +206,14 @@ def main():
             mes_selecionado = st.sidebar.selectbox("Mês", ["Todos"] + meses_disponiveis)
             ano_selecionado = st.sidebar.selectbox("Ano", ["Todos"] + anos_disponiveis)
             
+            # Filtro de STATUS
+            todos_status = sorted(df['STATUS'].unique().tolist())
+            status_selecionado = st.sidebar.selectbox("Status", ["Todos"] + todos_status)
+            
+            # Filtro de DEVICE_TYPE
+            todos_devices = sorted(df['DEVICE_TYPE'].unique().tolist())
+            device_selecionado = st.sidebar.selectbox("Tipo de Dispositivo", ["Todos"] + todos_devices)
+            
             # Aplicar filtros
             df_filtrado = df.copy()
             
@@ -219,6 +225,12 @@ def main():
                 
             if ano_selecionado != "Todos":
                 df_filtrado = df_filtrado[df_filtrado['ANO'] == ano_selecionado]
+                
+            if status_selecionado != "Todos":
+                df_filtrado = df_filtrado[df_filtrado['STATUS'] == status_selecionado]
+                
+            if device_selecionado != "Todos":
+                df_filtrado = df_filtrado[df_filtrado['DEVICE_TYPE'] == device_selecionado]
             
             # Exibir os dados originais
             with st.expander("Ver conteúdo original"):
@@ -230,7 +242,7 @@ def main():
             
             # Adicionar algumas métricas
             st.subheader('Métricas')
-            col1, col2, col3 = st.columns(3)
+            col1, col2, col3, col4 = st.columns(4)
             
             with col1:
                 st.metric("Total de Registros", len(df_filtrado))
@@ -239,7 +251,10 @@ def main():
                 st.metric("Bad Answers", bad_answers)
             with col3:
                 short_circuits = len(df_filtrado[df_filtrado['STATUS'].str.contains('SHORT CIRCUIT', na=False)])
-                st.metric("Short Circuit Troubles", short_circuits)
+                st.metric("Short Circuit", short_circuits)
+            with col4:
+                on_off_count = len(df_filtrado[df_filtrado['STATUS'].isin(['ON', 'OFF'])])
+                st.metric("ON/OFF Switches", on_off_count)
             
             # Gráfico de contagem por tipo de dispositivo
             st.subheader('Contagem por Tipo de Dispositivo')
