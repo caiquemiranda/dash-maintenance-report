@@ -53,9 +53,36 @@ def extrair_informacoes(conteudo):
     
     return pd.DataFrame(dados)
 
+def processar_valores_alarme(df):
+    """Processa as colunas de alarme separando valores e percentuais"""
+    
+    # Função auxiliar para extrair valor numérico do percentual
+    def extrair_percentual(valor):
+        return int(re.search(r'(\d+)%', valor).group(1))
+    
+    def extrair_valor(valor):
+        return int(valor.split('/')[0].strip())
+    
+    # Processar AlarmAt - remover o prefixo e manter apenas o valor após a /
+    df['AlarmAt'] = df['AlarmAt'].apply(lambda x: x.split('/')[-1])
+    
+    # Processar CurrentAlarm
+    df['CurrentAlarmValue'] = df['CurrentAlarm'].apply(extrair_valor)
+    df['CurrentAlarmPercent'] = df['CurrentAlarm'].apply(extrair_percentual)
+    
+    # Processar PeakAlarm
+    df['PeakAlarmValue'] = df['PeakAlarm'].apply(extrair_valor)
+    df['PeakAlarmPercent'] = df['PeakAlarm'].apply(extrair_percentual)
+    
+    # Remover as colunas originais
+    df = df.drop(['CurrentAlarm', 'PeakAlarm'], axis=1)
+    
+    return df
+
 # Ler e processar o arquivo
 caminho_arquivo = 'data/TrueAlarmService.txt'
 conteudo = ler_arquivo_log(caminho_arquivo)
 df = extrair_informacoes(conteudo)
+df = processar_valores_alarme(df)
 
 print(df.head())
