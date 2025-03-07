@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+import re
 
 # Configuração da página
 st.set_page_config(
@@ -12,10 +13,35 @@ st.set_page_config(
 # Título da aplicação
 st.title("Dados dos Painéis de Detecção de Incêndio")
 
+# Dicionário de tipos de dispositivos
+TIPOS_DISPOSITIVOS = {
+    'DF': 'Detector de Fumaça',
+    'AM': 'Acionador Manual',
+    'MR': 'Módulo Relé',
+    'MZ': 'Módulo de Zona'
+}
+
+# Função para extrair o tipo do dispositivo da descrição
+def extrair_tipo_dispositivo(descricao):
+    if descricao == 'UNUSED':
+        return 'Não Utilizado'
+    
+    # Procura por qualquer um dos códigos conhecidos após o número do endereço
+    padrao = r'-(' + '|'.join(TIPOS_DISPOSITIVOS.keys()) + r')-'
+    match = re.search(padrao, descricao)
+    
+    if match:
+        codigo = match.group(1)
+        return TIPOS_DISPOSITIVOS[codigo]
+    return 'Outro'
+
 # Leitura dos arquivos CSV
 @st.cache_data
 def carregar_dados(arquivo):
-    return pd.read_csv(arquivo)
+    df = pd.read_csv(arquivo)
+    # Adiciona coluna com o tipo do dispositivo
+    df['TIPO_DISPOSITIVO'] = df['CUSTOM_LABEL'].apply(extrair_tipo_dispositivo)
+    return df
 
 # Caminho para os arquivos
 painel1 = "data/PN01.csv"
@@ -89,6 +115,52 @@ def analisar_lacos(df, nome_painel):
     
     return fig_devices, gauges, devices_por_laco, percentual_uso
 
+# Função para criar gráfico de distribuição de tipos de dispositivos
+def criar_grafico_tipos(df, nome_painel):
+    # Contagem total por tipo de dispositivo
+    tipos_total = df['TIPO_DISPOSITIVO'].value_counts()
+    
+    # Criar gráfico de pizza
+    fig_tipos = go.Figure(data=[go.Pie(
+        labels=tipos_total.index,
+        values=tipos_total.values,
+        hole=.3,
+        textinfo='percent+label'
+    )])
+    
+    fig_tipos.update_layout(
+        title=f'Distribuição de Tipos de Dispositivos - {nome_painel}',
+        showlegend=True
+    )
+    
+    return fig_tipos, tipos_total
+
+# Função para criar gráfico de tipos por laço
+def criar_grafico_tipos_por_laco(df, nome_painel):
+    # Agrupa dispositivos por laço e tipo
+    tipos_por_laco = pd.crosstab(df['MAP'], df['TIPO_DISPOSITIVO'])
+    
+    # Criar gráfico de barras empilhadas
+    fig_tipos_laco = go.Figure()
+    
+    for tipo in tipos_por_laco.columns:
+        fig_tipos_laco.add_trace(go.Bar(
+            name=tipo,
+            x=tipos_por_laco.index,
+            y=tipos_por_laco[tipo],
+            text=tipos_por_laco[tipo],
+            textposition='auto',
+        ))
+    
+    fig_tipos_laco.update_layout(
+        title=f'Distribuição de Tipos de Dispositivos por Laço - {nome_painel}',
+        xaxis_title='Número do Laço',
+        yaxis_title='Quantidade de Dispositivos',
+        barmode='stack'
+    )
+    
+    return fig_tipos_laco
+
 # Análise dos dados
 st.header("Análise dos Painéis")
 
@@ -108,6 +180,14 @@ for idx, (gauge, col) in enumerate(zip(gauges1, col_metricas1)):
             f"{percentual1.values[idx]:.1f}% utilizado"
         )
 
+# Análise de tipos de dispositivos - Painel 1
+fig_tipos1, tipos_total1 = criar_grafico_tipos(df_painel1, "Painel 1")
+st.plotly_chart(fig_tipos1, use_container_width=True)
+
+# Análise de tipos por laço - Painel 1
+fig_tipos_laco1 = criar_grafico_tipos_por_laco(df_painel1, "Painel 1")
+st.plotly_chart(fig_tipos_laco1, use_container_width=True)
+
 # Análise Painel 2
 st.subheader("Painel 2 (PN02)")
 fig_devices2, gauges2, devices2, percentual2 = analisar_lacos(df_painel2, "Painel 2")
@@ -123,6 +203,14 @@ for idx, (gauge, col) in enumerate(zip(gauges2, col_metricas2)):
             f"{devices2.values[idx]} dispositivos",
             f"{percentual2.values[idx]:.1f}% utilizado"
         )
+
+# Análise de tipos de dispositivos - Painel 2
+fig_tipos2, tipos_total2 = criar_grafico_tipos(df_painel2, "Painel 2")
+st.plotly_chart(fig_tipos2, use_container_width=True)
+
+# Análise de tipos por laço - Painel 2
+fig_tipos_laco2 = criar_grafico_tipos_por_laco(df_painel2, "Painel 2")
+st.plotly_chart(fig_tipos_laco2, use_container_width=True)
 
 # Tabelas de dados originais
 st.header("Dados Detalhados dos Painéis")
@@ -147,7 +235,9 @@ with col3:
     total_devices1 = len(df_painel1[df_painel1['CUSTOM_LABEL'] != 'UNUSED'])
     st.write(f"Total de dispositivos ativos: {total_devices1}")
     st.write(f"Total de endereços não utilizados: {len(df_painel1[df_painel1['CUSTOM_LABEL'] == 'UNUSED'])}")
-    st.write("Distribuição por laço:")
+    st.write("\nDistribuição por tipo de dispositivo:")
+    st.write(tipos_total1)
+    st.write("\nDistribuição por laço:")
     st.write(devices1)
 
 with col4:
@@ -155,5 +245,7 @@ with col4:
     total_devices2 = len(df_painel2[df_painel2['CUSTOM_LABEL'] != 'UNUSED'])
     st.write(f"Total de dispositivos ativos: {total_devices2}")
     st.write(f"Total de endereços não utilizados: {len(df_painel2[df_painel2['CUSTOM_LABEL'] == 'UNUSED'])}")
-    st.write("Distribuição por laço:")
+    st.write("\nDistribuição por tipo de dispositivo:")
+    st.write(tipos_total2)
+    st.write("\nDistribuição por laço:")
     st.write(devices2)
