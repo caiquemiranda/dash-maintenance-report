@@ -1,12 +1,6 @@
 import pandas as pd
 import re
-import datetime
 
-def ler_arquivo_log(caminho):
-    """Lê o arquivo de log e retorna seu conteúdo"""
-    with open(caminho, 'r', encoding='utf-8') as file:
-        return file.read()
-    
 def extrair_informacoes(conteudo):
     """Extrai informações do conteúdo do log usando regex"""
     # Padrão para encontrar as linhas de dados
@@ -78,11 +72,3 @@ def processar_valores_alarme(df):
     df = df.drop(['CurrentAlarm', 'PeakAlarm'], axis=1)
     
     return df
-
-# Ler e processar o arquivo
-caminho_arquivo = 'data/TrueAlarmService.txt'
-conteudo = ler_arquivo_log(caminho_arquivo)
-df = extrair_informacoes(conteudo)
-df = processar_valores_alarme(df)
-
-print(df.head())

@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from logs import extrair_informacoes, processar_valores_alarme, ler_arquivo_log
+from logs import extrair_informacoes, processar_valores_alarme
 
 def main():
     st.title("Análise de Logs do Painel de Sensores de Incêndio")
@@ -9,10 +9,10 @@ def main():
     uploaded_file = st.file_uploader("Escolha um arquivo de log (.txt)", type="txt")
     
     if uploaded_file is not None:
-        # Ler o conteúdo do arquivo
-        conteudo = uploaded_file.getvalue().decode("utf-8")
-        
         try:
+            # Ler o conteúdo do arquivo
+            conteudo = uploaded_file.getvalue().decode("utf-8")
+            
             # Processar os dados
             df = extrair_informacoes(conteudo)
             df = processar_valores_alarme(df)
