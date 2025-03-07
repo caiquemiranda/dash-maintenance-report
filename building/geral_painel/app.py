@@ -18,7 +18,15 @@ TIPOS_DISPOSITIVOS = {
     'DF': 'Detector de Fumaça',
     'AM': 'Acionador Manual',
     'MR': 'Módulo Relé',
-    'MZ': 'Módulo de Zona'
+    'MZ': 'Módulo de Zona',
+    'MI': 'Módulo Isolador',
+    'DT': 'Detector de Temperatura',
+    'DL': 'Detector Linear',
+    'MM': 'Módulo de Monitoramento',
+    'SI': 'Sirene',
+    'AV': 'Avisador',
+    'MC': 'Módulo de Comando',
+    'MD': 'Módulo de Dois Estados'
 }
 
 # Função para extrair o tipo do dispositivo da descrição
@@ -125,12 +133,21 @@ def criar_grafico_tipos(df, nome_painel):
         labels=tipos_total.index,
         values=tipos_total.values,
         hole=.3,
-        textinfo='percent+label'
+        textinfo='percent+label',
+        textposition='inside',
+        insidetextorientation='radial'
     )])
     
     fig_tipos.update_layout(
         title=f'Distribuição de Tipos de Dispositivos - {nome_painel}',
-        showlegend=True
+        showlegend=True,
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=-0.5,
+            xanchor="center",
+            x=0.5
+        )
     )
     
     return fig_tipos, tipos_total
@@ -143,20 +160,38 @@ def criar_grafico_tipos_por_laco(df, nome_painel):
     # Criar gráfico de barras empilhadas
     fig_tipos_laco = go.Figure()
     
-    for tipo in tipos_por_laco.columns:
-        fig_tipos_laco.add_trace(go.Bar(
-            name=tipo,
-            x=tipos_por_laco.index,
-            y=tipos_por_laco[tipo],
-            text=tipos_por_laco[tipo],
-            textposition='auto',
-        ))
+    # Definir uma ordem específica para os tipos (colocando 'Não Utilizado' por último)
+    ordem_tipos = [tipo for tipo in tipos_por_laco.columns if tipo != 'Não Utilizado']
+    if 'Não Utilizado' in tipos_por_laco.columns:
+        ordem_tipos.append('Não Utilizado')
+    
+    # Criar uma paleta de cores personalizada
+    cores = px.colors.qualitative.Set3[:len(ordem_tipos)]
+    
+    for tipo, cor in zip(ordem_tipos, cores):
+        if tipo in tipos_por_laco.columns:
+            fig_tipos_laco.add_trace(go.Bar(
+                name=tipo,
+                x=tipos_por_laco.index,
+                y=tipos_por_laco[tipo],
+                text=tipos_por_laco[tipo],
+                textposition='auto',
+                marker_color=cor
+            ))
     
     fig_tipos_laco.update_layout(
         title=f'Distribuição de Tipos de Dispositivos por Laço - {nome_painel}',
         xaxis_title='Número do Laço',
         yaxis_title='Quantidade de Dispositivos',
-        barmode='stack'
+        barmode='stack',
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=-0.5,
+            xanchor="center",
+            x=0.5
+        ),
+        height=600  # Aumentar altura do gráfico para melhor visualização
     )
     
     return fig_tipos_laco
