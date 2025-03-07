@@ -39,16 +39,8 @@ st.write(df_painel2.head())
 
 # Função para análise de dispositivos por laço
 def analisar_lacos(df, nome_painel):
-    # Verificando se a coluna de status existe
-    status_column = 'Status' if 'Status' in df.columns else 'STATUS'
-    map_column = 'Map' if 'Map' in df.columns else 'MAP'
-    
-    if status_column not in df.columns:
-        st.error(f"Coluna de status não encontrada no {nome_painel}. Colunas disponíveis: {df.columns.tolist()}")
-        return None, None, None, None
-    
     # Contagem de dispositivos por laço (MAP)
-    devices_por_laco = df[df[status_column] != 'UNUSED'][map_column].value_counts().sort_index()
+    devices_por_laco = df[df['CUSTOM_LABEL'] != 'UNUSED']['MAP'].value_counts().sort_index()
     
     # Percentual de utilização por laço
     percentual_uso = (devices_por_laco / 250 * 100).round(2)
@@ -102,39 +94,35 @@ st.header("Análise dos Painéis")
 
 # Análise Painel 1
 st.subheader("Painel 1 (PN01)")
-resultado1 = analisar_lacos(df_painel1, "Painel 1")
-if resultado1[0] is not None:
-    fig_devices1, gauges1, devices1, percentual1 = resultado1
-    st.plotly_chart(fig_devices1, use_container_width=True)
+fig_devices1, gauges1, devices1, percentual1 = analisar_lacos(df_painel1, "Painel 1")
+st.plotly_chart(fig_devices1, use_container_width=True)
 
-    # Métricas do Painel 1
-    col_metricas1 = st.columns(len(gauges1))
-    for idx, (gauge, col) in enumerate(zip(gauges1, col_metricas1)):
-        with col:
-            st.plotly_chart(gauge, use_container_width=True)
-            st.metric(
-                f"Laço {devices1.index[idx]}",
-                f"{devices1.values[idx]} dispositivos",
-                f"{percentual1.values[idx]:.1f}% utilizado"
-            )
+# Métricas do Painel 1
+col_metricas1 = st.columns(len(gauges1))
+for idx, (gauge, col) in enumerate(zip(gauges1, col_metricas1)):
+    with col:
+        st.plotly_chart(gauge, use_container_width=True)
+        st.metric(
+            f"Laço {devices1.index[idx]}",
+            f"{devices1.values[idx]} dispositivos",
+            f"{percentual1.values[idx]:.1f}% utilizado"
+        )
 
 # Análise Painel 2
 st.subheader("Painel 2 (PN02)")
-resultado2 = analisar_lacos(df_painel2, "Painel 2")
-if resultado2[0] is not None:
-    fig_devices2, gauges2, devices2, percentual2 = resultado2
-    st.plotly_chart(fig_devices2, use_container_width=True)
+fig_devices2, gauges2, devices2, percentual2 = analisar_lacos(df_painel2, "Painel 2")
+st.plotly_chart(fig_devices2, use_container_width=True)
 
-    # Métricas do Painel 2
-    col_metricas2 = st.columns(len(gauges2))
-    for idx, (gauge, col) in enumerate(zip(gauges2, col_metricas2)):
-        with col:
-            st.plotly_chart(gauge, use_container_width=True)
-            st.metric(
-                f"Laço {devices2.index[idx]}",
-                f"{devices2.values[idx]} dispositivos",
-                f"{percentual2.values[idx]:.1f}% utilizado"
-            )
+# Métricas do Painel 2
+col_metricas2 = st.columns(len(gauges2))
+for idx, (gauge, col) in enumerate(zip(gauges2, col_metricas2)):
+    with col:
+        st.plotly_chart(gauge, use_container_width=True)
+        st.metric(
+            f"Laço {devices2.index[idx]}",
+            f"{devices2.values[idx]} dispositivos",
+            f"{percentual2.values[idx]:.1f}% utilizado"
+        )
 
 # Tabelas de dados originais
 st.header("Dados Detalhados dos Painéis")
@@ -156,16 +144,16 @@ col3, col4 = st.columns(2)
 
 with col3:
     st.write("**Painel 1 (PN01)**")
-    total_devices1 = len(df_painel1[df_painel1['STATUS'] != 'UNUSED'])
+    total_devices1 = len(df_painel1[df_painel1['CUSTOM_LABEL'] != 'UNUSED'])
     st.write(f"Total de dispositivos ativos: {total_devices1}")
-    st.write(f"Total de endereços não utilizados: {len(df_painel1[df_painel1['STATUS'] == 'UNUSED'])}")
+    st.write(f"Total de endereços não utilizados: {len(df_painel1[df_painel1['CUSTOM_LABEL'] == 'UNUSED'])}")
     st.write("Distribuição por laço:")
     st.write(devices1)
 
 with col4:
     st.write("**Painel 2 (PN02)**")
-    total_devices2 = len(df_painel2[df_painel2['STATUS'] != 'UNUSED'])
+    total_devices2 = len(df_painel2[df_painel2['CUSTOM_LABEL'] != 'UNUSED'])
     st.write(f"Total de dispositivos ativos: {total_devices2}")
-    st.write(f"Total de endereços não utilizados: {len(df_painel2[df_painel2['STATUS'] == 'UNUSED'])}")
+    st.write(f"Total de endereços não utilizados: {len(df_painel2[df_painel2['CUSTOM_LABEL'] == 'UNUSED'])}")
     st.write("Distribuição por laço:")
     st.write(devices2)
