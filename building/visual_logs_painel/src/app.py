@@ -6,6 +6,10 @@ import io
 import plotly.express as px
 import plotly.graph_objects as go
 import numpy as np
+import warnings
+
+# Suprimir os avisos FutureWarning específicos do pandas
+warnings.simplefilter(action='ignore', category=FutureWarning)
 
 st.set_page_config(
     page_title="Analisador de TroubleLog",
