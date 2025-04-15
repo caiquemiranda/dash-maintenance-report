@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 import io
 import plotly.express as px
 import plotly.graph_objects as go
@@ -141,12 +141,127 @@ def criar_visualizacoes(df):
         # Criar um dataframe agregado por data
         df_por_data = df.groupby('Data').size().reset_index(name='Contagem')
         
-        # Gráfico de ocorrências por data
-        fig = px.bar(df_por_data, x='Data', y='Contagem', 
-                     title='Ocorrências por Data',
-                     labels={'Contagem': 'Número de Ocorrências', 'Data': 'Data'},
-                     color='Contagem', color_continuous_scale='Viridis')
-        st.plotly_chart(fig, use_container_width=True)
+        # Ordenar por data para visualização cronológica
+        if 'Data_Obj' in df.columns and not df['Data_Obj'].isnull().all():
+            # Converter data de string para datetime para ordenação
+            df['Data_Formatada'] = pd.to_datetime(df['Data'], format='%d-%m-%Y')
+            min_date = df['Data_Formatada'].min()
+            max_date = df['Data_Formatada'].max()
+        else:
+            # Usar datas como estão se não pudermos converter
+            min_date = None
+            max_date = None
+        
+        # Criar seletores de data
+        col1, col2, col3 = st.columns([1, 1, 2])
+        with col1:
+            modo_visualizacao = st.radio("Modo de visualização:", ["Todas as datas", "Período específico", "Dia específico"])
+        
+        if modo_visualizacao == "Período específico" and min_date and max_date:
+            with col2:
+                data_inicio = st.date_input("Data inicial", min_date)
+                data_fim = st.date_input("Data final", max_date)
+            
+            # Filtrar dataframe por período
+            df_filtrado = df[(df['Data_Formatada'] >= pd.to_datetime(data_inicio)) & 
+                            (df['Data_Formatada'] <= pd.to_datetime(data_fim))]
+            
+            # Criar dataframe agregado por data
+            df_periodo = df_filtrado.groupby('Data').size().reset_index(name='Contagem')
+            
+            # Gráfico de ocorrências por período
+            fig = px.bar(df_periodo, x='Data', y='Contagem', 
+                        title=f'Ocorrências de {data_inicio.strftime("%d/%m/%Y")} a {data_fim.strftime("%d/%m/%Y")}',
+                        labels={'Contagem': 'Número de Ocorrências', 'Data': 'Data'},
+                        color='Contagem', color_continuous_scale='Viridis')
+            st.plotly_chart(fig, use_container_width=True)
+            
+            # Mostrar estatísticas do período
+            st.subheader(f"Estatísticas do Período ({data_inicio.strftime('%d/%m/%Y')} a {data_fim.strftime('%d/%m/%Y')})")
+            total_ocorrencias = df_periodo['Contagem'].sum()
+            media_ocorrencias = df_periodo['Contagem'].mean()
+            max_ocorrencias = df_periodo['Contagem'].max()
+            data_max_ocorrencias = df_periodo.loc[df_periodo['Contagem'].idxmax(), 'Data']
+            
+            col1, col2, col3 = st.columns(3)
+            col1.metric("Total de ocorrências", total_ocorrencias)
+            col2.metric("Média diária", f"{media_ocorrencias:.2f}")
+            col3.metric("Maior ocorrência", f"{max_ocorrencias} ({data_max_ocorrencias})")
+            
+        elif modo_visualizacao == "Dia específico" and min_date and max_date:
+            with col2:
+                data_especifica = st.date_input("Selecione a data", max_date)
+            
+            # Filtrar dataframe para a data específica
+            df_dia = df[df['Data_Formatada'].dt.date == data_especifica]
+            
+            # Verificar se há dados para a data selecionada
+            if len(df_dia) > 0:
+                # Análise por hora para o dia específico
+                df_hora_dia = df_dia.groupby('Hora_Numero').size().reset_index(name='Contagem')
+                
+                # Gráfico de ocorrências por hora no dia específico
+                fig_hora_dia = px.bar(df_hora_dia, x='Hora_Numero', y='Contagem',
+                                    title=f'Ocorrências em {data_especifica.strftime("%d/%m/%Y")} por Hora',
+                                    labels={'Contagem': 'Número de Ocorrências', 'Hora_Numero': 'Hora'},
+                                    color='Contagem', color_continuous_scale='Viridis')
+                fig_hora_dia.update_xaxes(tickvals=list(range(0, 24)))
+                st.plotly_chart(fig_hora_dia, use_container_width=True)
+                
+                # Detalhamento por tipo de dispositivo nesse dia
+                if 'Tipo de Dispositivo' in df.columns and not df['Tipo de Dispositivo'].empty:
+                    st.subheader(f"Dispositivos com Problemas em {data_especifica.strftime('%d/%m/%Y')}")
+                    df_dispositivos_dia = df_dia[df_dia['Tipo de Dispositivo'] != ''].groupby('Tipo de Dispositivo').size().reset_index(name='Contagem')
+                    df_dispositivos_dia = df_dispositivos_dia.sort_values('Contagem', ascending=False)
+                    
+                    fig_disp_dia = px.bar(df_dispositivos_dia, y='Tipo de Dispositivo', x='Contagem',
+                                        labels={'Contagem': 'Número de Ocorrências', 'Tipo de Dispositivo': 'Dispositivo'},
+                                        color='Contagem', color_continuous_scale='Viridis',
+                                        orientation='h')
+                    st.plotly_chart(fig_disp_dia, use_container_width=True)
+                
+                # Detalhamento por status nesse dia
+                if 'Status' in df.columns and not df['Status'].empty:
+                    st.subheader(f"Status de Falha em {data_especifica.strftime('%d/%m/%Y')}")
+                    df_status_dia = df_dia[df_dia['Status'] != ''].groupby('Status').size().reset_index(name='Contagem')
+                    df_status_dia = df_status_dia.sort_values('Contagem', ascending=False)
+                    
+                    fig_status_dia = px.bar(df_status_dia, y='Status', x='Contagem',
+                                            labels={'Contagem': 'Número de Ocorrências', 'Status': 'Status'},
+                                            color='Contagem', color_continuous_scale='Viridis',
+                                            orientation='h')
+                    st.plotly_chart(fig_status_dia, use_container_width=True)
+                
+                # Tabela com todos os registros do dia
+                st.subheader(f"Todos os Registros de {data_especifica.strftime('%d/%m/%Y')}")
+                st.dataframe(df_dia.drop(columns=['Data_Formatada', 'Data_Obj', 'Hora_Numero', 'Dia_Ordem'], errors='ignore'), use_container_width=True)
+            else:
+                st.warning(f"Não há registros para a data {data_especifica.strftime('%d/%m/%Y')}")
+        else:
+            # Visualização de todas as datas
+            # Calcular o número ideal de registros a mostrar baseado na quantidade de datas
+            if len(df_por_data) > 50:
+                st.info(f"O log contém {len(df_por_data)} datas diferentes. O gráfico mostra as ocorrências diárias, use os controles acima para filtrar períodos específicos.")
+            
+            # Gráfico de todas as ocorrências por data
+            fig = px.bar(df_por_data, x='Data', y='Contagem', 
+                        title='Ocorrências por Data (Todas as datas)',
+                        labels={'Contagem': 'Número de Ocorrências', 'Data': 'Data'},
+                        color='Contagem', color_continuous_scale='Viridis')
+            
+            if len(df_por_data) > 30:
+                # Se houver muitas datas, ajustar o layout para melhor visualização
+                fig.update_layout(xaxis={'categoryarray': df_por_data['Data'].tolist()})
+                if len(df_por_data) > 50:
+                    fig.update_layout(xaxis={'showticklabels': False})
+                    fig.add_annotation(
+                        text="Muitas datas para exibir os rótulos. Use o zoom ou filtros acima.",
+                        xref="paper", yref="paper",
+                        x=0.5, y=-0.15,
+                        showarrow=False
+                    )
+            
+            st.plotly_chart(fig, use_container_width=True)
         
         # Top 5 dias com mais ocorrências
         st.subheader("Dias com Maior Número de Ocorrências")
@@ -355,7 +470,7 @@ if uploaded_file is not None:
             # Exibir tabela com os dados
             st.subheader("Tabela de Logs")
             # Remover colunas auxiliares usadas apenas para análise
-            display_df = filtered_df.drop(columns=['Hora_Numero', 'Data_Obj', 'Dia_Ordem'], errors='ignore')
+            display_df = filtered_df.drop(columns=['Hora_Numero', 'Data_Obj', 'Dia_Ordem', 'Data_Formatada'], errors='ignore')
             st.dataframe(display_df, use_container_width=True)
             
             # Opção para download dos dados processados
