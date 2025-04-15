@@ -44,7 +44,8 @@ def processar_troublelog(conteudo):
                 proxima_linha = linhas[i + 1]
                 # Se a próxima linha não começa com "ENTRY", assume que contém tipo_dispositivo e status
                 if not proxima_linha.startswith("ENTRY"):
-                    info_match = re.search(r'^\s+(.+?)\s+(.+?)$', proxima_linha)
+                    # Busca por dois blocos de texto separados por múltiplos espaços
+                    info_match = re.search(r'^\s+(.+?)\s{2,}(.+?)$', proxima_linha)
                     if info_match:
                         tipo_dispositivo = info_match.group(1).strip()
                         status = info_match.group(2).strip()
