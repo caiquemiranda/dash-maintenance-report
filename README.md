@@ -39,9 +39,13 @@ pip install -r requirements.txt
 
 1. Certifique-se de que o ambiente virtual está ativado
 
-2. Execute o aplicativo:
+2. Execute o aplicativo usando um dos seguintes comandos:
 ```bash
+# Opção 1
 streamlit run src/app.py
+
+# Opção 2
+python -m streamlit run src/app.py
 ```
 
 3. O aplicativo será aberto automaticamente no seu navegador padrão. Se não abrir, você pode acessar manualmente em:
