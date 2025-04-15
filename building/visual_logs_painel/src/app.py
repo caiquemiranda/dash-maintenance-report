@@ -142,9 +142,7 @@ def criar_visualizacoes(df):
         df_por_data = df.groupby('Data').size().reset_index(name='Contagem')
         
         # Ordenar por data para visualização cronológica
-        if 'Data_Obj' in df.columns and not df['Data_Obj'].isnull().all():
-            # Converter data de string para datetime para ordenação
-            df['Data_Formatada'] = pd.to_datetime(df['Data'], format='%d-%m-%Y')
+        if 'Data_Formatada' in df.columns and not df['Data_Formatada'].isnull().all():
             min_date = df['Data_Formatada'].min()
             max_date = df['Data_Formatada'].max()
         else:
@@ -420,11 +418,83 @@ if uploaded_file is not None:
     try:
         df = processar_troublelog(conteudo)
         
-        # Exibir resumo dos dados
+        # Preparar o dataframe para análise
+        if 'Data' in df.columns:
+            df['Data_Formatada'] = pd.to_datetime(df['Data'], format='%d-%m-%Y', errors='coerce')
+        
+        # Configuração dos filtros na barra lateral
+        st.sidebar.title("Filtros Globais")
+        
+        # Filtro de data
+        if 'Data_Formatada' in df.columns and not df['Data_Formatada'].isnull().all():
+            min_date = df['Data_Formatada'].min().date()
+            max_date = df['Data_Formatada'].max().date()
+            
+            date_filter = st.sidebar.expander("Filtrar por Data", expanded=False)
+            with date_filter:
+                use_date_filter = st.checkbox("Ativar filtro de data")
+                
+                if use_date_filter:
+                    date_range = st.date_input(
+                        "Selecione o período:",
+                        value=(min_date, max_date),
+                        min_value=min_date,
+                        max_value=max_date
+                    )
+                    
+                    if len(date_range) == 2:
+                        start_date, end_date = date_range
+                        df = df[(df['Data_Formatada'].dt.date >= start_date) & 
+                                (df['Data_Formatada'].dt.date <= end_date)]
+        
+        # Filtro de local
+        if 'Local' in df.columns and not df['Local'].empty:
+            local_filter = st.sidebar.expander("Filtrar por Local", expanded=False)
+            with local_filter:
+                use_local_filter = st.checkbox("Ativar filtro de local")
+                
+                if use_local_filter:
+                    locais = ["Todos"] + sorted(df['Local'].unique().tolist())
+                    local_selecionado = st.selectbox("Selecione o local:", locais)
+                    
+                    if local_selecionado != "Todos":
+                        df = df[df['Local'] == local_selecionado]
+        
+        # Filtro de tipo de dispositivo
+        if 'Tipo de Dispositivo' in df.columns and not df['Tipo de Dispositivo'].empty:
+            device_filter = st.sidebar.expander("Filtrar por Dispositivo", expanded=False)
+            with device_filter:
+                use_device_filter = st.checkbox("Ativar filtro de dispositivo")
+                
+                if use_device_filter:
+                    dispositivos = ["Todos"] + sorted(df['Tipo de Dispositivo'].unique().tolist())
+                    dispositivo_selecionado = st.selectbox("Selecione o dispositivo:", dispositivos)
+                    
+                    if dispositivo_selecionado != "Todos":
+                        df = df[df['Tipo de Dispositivo'] == dispositivo_selecionado]
+        
+        # Filtro de status
+        if 'Status' in df.columns and not df['Status'].empty:
+            status_filter = st.sidebar.expander("Filtrar por Status", expanded=False)
+            with status_filter:
+                use_status_filter = st.checkbox("Ativar filtro de status")
+                
+                if use_status_filter:
+                    status_list = ["Todos"] + sorted(df['Status'].unique().tolist())
+                    status_selecionado = st.selectbox("Selecione o status:", status_list)
+                    
+                    if status_selecionado != "Todos":
+                        df = df[df['Status'] == status_selecionado]
+        
+        # Exibir informações sobre os dados filtrados
+        total_registros = len(df)
+        st.sidebar.metric("Registros filtrados", total_registros)
+        
+        # Exibir resumo dos dados filtrados
         st.subheader("Resumo dos Logs de Problemas")
         col1, col2, col3 = st.columns(3)
         with col1:
-            st.metric("Total de registros", len(df))
+            st.metric("Total de registros", total_registros)
         with col2:
             if 'Local' in df.columns:
                 st.metric("Locais únicos", df['Local'].nunique())
@@ -436,41 +506,10 @@ if uploaded_file is not None:
         tab1, tab2, tab3 = st.tabs(["Dados", "Visualizações", "Estatísticas"])
         
         with tab1:
-            # Filtragem
-            st.subheader("Filtros")
-            col1, col2, col3 = st.columns(3)
-            
-            with col1:
-                if 'Local' in df.columns and not df['Local'].empty:
-                    locais = ["Todos"] + sorted(df['Local'].unique().tolist())
-                    local_selecionado = st.selectbox("Filtrar por Local:", locais)
-            
-            with col2:
-                if 'Status' in df.columns and not df['Status'].empty:
-                    status = ["Todos"] + sorted(df['Status'].unique().tolist())
-                    status_selecionado = st.selectbox("Filtrar por Status:", status)
-                    
-            with col3:
-                if 'Tipo de Dispositivo' in df.columns and not df['Tipo de Dispositivo'].empty:
-                    dispositivos = ["Todos"] + sorted(df['Tipo de Dispositivo'].unique().tolist())
-                    dispositivo_selecionado = st.selectbox("Filtrar por Dispositivo:", dispositivos)
-            
-            # Aplicar filtros
-            filtered_df = df.copy()
-            
-            if local_selecionado != "Todos":
-                filtered_df = filtered_df[filtered_df['Local'] == local_selecionado]
-                
-            if status_selecionado != "Todos":
-                filtered_df = filtered_df[filtered_df['Status'] == status_selecionado]
-                
-            if dispositivo_selecionado != "Todos":
-                filtered_df = filtered_df[filtered_df['Tipo de Dispositivo'] == dispositivo_selecionado]
-            
             # Exibir tabela com os dados
             st.subheader("Tabela de Logs")
             # Remover colunas auxiliares usadas apenas para análise
-            display_df = filtered_df.drop(columns=['Hora_Numero', 'Data_Obj', 'Dia_Ordem', 'Data_Formatada'], errors='ignore')
+            display_df = df.drop(columns=['Hora_Numero', 'Data_Obj', 'Dia_Ordem', 'Data_Formatada'], errors='ignore')
             st.dataframe(display_df, use_container_width=True)
             
             # Opção para download dos dados processados
