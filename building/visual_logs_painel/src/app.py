@@ -166,6 +166,55 @@ def criar_visualizacoes(df):
         fig_hora.update_xaxes(tickvals=list(range(0, 24)))
         st.plotly_chart(fig_hora, use_container_width=True)
     
+    # Análise de locais específicos com mais problemas (descrição)
+    st.subheader("Locais/Dispositivos Específicos com Mais Problemas")
+    
+    if 'Local' in df.columns:
+        # Excluir entradas genéricas de reconhecimento
+        df_locais = df[~df['Local'].isin(['TROUBLES', 'SUPERVISORIES', 'HARDWARE RESET IN PROGRESS'])]
+        
+        # Pegar os 15 locais mais problemáticos
+        locais_contagem = df_locais.groupby('Local').size().reset_index(name='Contagem')
+        locais_contagem = locais_contagem.sort_values('Contagem', ascending=False).head(15)
+        
+        # Gráfico de barras horizontais para locais
+        fig_locais = px.bar(locais_contagem, y='Local', x='Contagem',
+                          title='Top 15 Locais/Dispositivos com Mais Problemas',
+                          labels={'Contagem': 'Número de Ocorrências', 'Local': 'Local/Dispositivo'},
+                          color='Contagem', color_continuous_scale='Viridis',
+                          orientation='h')
+        st.plotly_chart(fig_locais, use_container_width=True)
+        
+        # Análise combinada: Local x Tipo de Dispositivo
+        if 'Tipo de Dispositivo' in df.columns and not df['Tipo de Dispositivo'].empty:
+            st.subheader("Análise por Local e Tipo de Dispositivo")
+            df_local_tipo = df_locais.groupby(['Local', 'Tipo de Dispositivo']).size().reset_index(name='Contagem')
+            df_local_tipo = df_local_tipo.sort_values('Contagem', ascending=False).head(15)
+            
+            fig_local_tipo = px.bar(df_local_tipo, 
+                                   x='Contagem', 
+                                   y='Local',
+                                   color='Tipo de Dispositivo',
+                                   title='Ocorrências por Local e Tipo de Dispositivo',
+                                   labels={'Contagem': 'Número de Ocorrências', 'Local': 'Local/Dispositivo'},
+                                   orientation='h')
+            st.plotly_chart(fig_local_tipo, use_container_width=True)
+        
+        # Análise combinada: Local x Status
+        if 'Status' in df.columns and not df['Status'].empty:
+            st.subheader("Análise por Local e Status")
+            df_local_status = df_locais.groupby(['Local', 'Status']).size().reset_index(name='Contagem')
+            df_local_status = df_local_status.sort_values('Contagem', ascending=False).head(15)
+            
+            fig_local_status = px.bar(df_local_status, 
+                                     x='Contagem', 
+                                     y='Local',
+                                     color='Status',
+                                     title='Tipos de Problemas por Local',
+                                     labels={'Contagem': 'Número de Ocorrências', 'Local': 'Local/Dispositivo'},
+                                     orientation='h')
+            st.plotly_chart(fig_local_status, use_container_width=True)
+    
     # Análise de dispositivos mais problemáticos
     st.subheader("Dispositivos Mais Problemáticos")
     
