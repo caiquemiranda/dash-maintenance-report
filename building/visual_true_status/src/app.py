@@ -21,8 +21,8 @@ def parse_true_alarm(file):
     regex_canal = re.compile(r"Channel (\d+) \((M\d)\)")
     # Regex para DF (padrão)
     regex_df = re.compile(r"^\s*(\d{1,4}(?:-\d)?)\s+(.+?)\s+([*\d.]+/[\d ]+)\s+(\d{1,3}|--)\s+(\d{1,3}|--)\/(\s*\d{1,3}%|\s*--|\s*\d{1,3}C)\s+(\d{1,3}|--)\/(\s*\d{1,3}%|\s*--|\s*\d{1,3}C)\s+(\w{3})$")
-    # Regex para DT (temperatura)
-    regex_dt = re.compile(r"^\s*(\d{1,4}(?:-\d)?)\s+(.+?DT.*?)\s+(\d{1,3})C\/(\d{1,4})\s+(--|\d{1,3})\s+(\d{1,3})\/\s*(\d{1,3})C\s+(\d{1,3})\/\s*(\d{1,3})C\s+(\w{3})$")
+    # Regex para DT (temperatura) - identifica pelo valor inicial \d{1,3}C/\d{1,4}
+    regex_dt = re.compile(r"^\s*(\d{1,4}(?:-\d)?)\s+(.+?)\s+(\d{1,3})C\/(\d{1,4})\s+(--|\d{1,3})\s+(\d{1,3})\/\s*(\d{1,3})C\s+(\d{1,3})\/\s*(\d{1,3})C\s+(\w{3})$")
     for linha in linhas:
         linha = linha.strip()
         if not linha:
@@ -31,7 +31,7 @@ def parse_true_alarm(file):
         if canal_match:
             canal_atual = canal_match.group(2)
             continue
-        # Tenta DT primeiro
+        # Tenta DT primeiro (agora não depende da descrição)
         dado_dt = regex_dt.match(linha)
         if dado_dt and canal_atual:
             dados.append({
