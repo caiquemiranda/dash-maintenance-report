@@ -20,9 +20,9 @@ def parse_true_alarm(file):
     canal_atual = None
     regex_canal = re.compile(r"Channel (\d+) \((M\d)\)")
     # Regex para DF (padrão)
-    regex_df = re.compile(r"^(\d{1,4}(?:-\d)?)\s+(.+?)\s+([*\d.]+/[\d ]+)\s+(\d{1,3}|--)\s+(\d{1,3}|--)\/(\s*\d{1,3}%|\s*--|\s*\d{1,3}C)\s+(\d{1,3}|--)\/(\s*\d{1,3}%|\s*--|\s*\d{1,3}C)\s+(\w{3})$")
+    regex_df = re.compile(r"^\s*(\d{1,4}(?:-\d)?)\s+(.+?)\s+([*\d.]+/[\d ]+)\s+(\d{1,3}|--)\s+(\d{1,3}|--)\/(\s*\d{1,3}%|\s*--|\s*\d{1,3}C)\s+(\d{1,3}|--)\/(\s*\d{1,3}%|\s*--|\s*\d{1,3}C)\s+(\w{3})$")
     # Regex para DT (temperatura)
-    regex_dt = re.compile(r"^(\d{1,4}(?:-\d)?)\s+(.+?DT.*?)\s+(\d{1,3})C\/(\d{1,4})\s+--\s+(\d{1,3})\/(\d{1,3})C\s+(\d{1,3})\/(\d{1,3})C\s+(\w{3})$")
+    regex_dt = re.compile(r"^\s*(\d{1,4}(?:-\d)?)\s+(.+?DT.*?)\s+(\d{1,3})C\/(\d{1,4})\s+(--|\d{1,3})\s+(\d{1,3})\/\s*(\d{1,3})C\s+(\d{1,3})\/\s*(\d{1,3})C\s+(\w{3})$")
     for linha in linhas:
         linha = linha.strip()
         if not linha:
@@ -40,18 +40,18 @@ def parse_true_alarm(file):
                 'Descricao': dado_dt.group(2),
                 'Temp_Range': dado_dt.group(3),
                 'Simplex_Range': dado_dt.group(4),
-                'Media': None,
-                'Atual_Simplex': dado_dt.group(5),
-                'Atual_Temp': dado_dt.group(6),
-                'Pico_Simplex': dado_dt.group(7),
-                'Pico_Temp': dado_dt.group(8),
-                'Status': dado_dt.group(9)
+                'Media': dado_dt.group(5) if dado_dt.group(5) != '--' else None,
+                'Atual_Simplex': dado_dt.group(6),
+                'Atual_Temp': dado_dt.group(7),
+                'Pico_Simplex': dado_dt.group(8),
+                'Pico_Temp': dado_dt.group(9),
+                'Status': dado_dt.group(10),
+                'Tipo': 'DT'
             })
             continue
         # Tenta DF (padrão)
         dado_df = regex_df.match(linha)
         if dado_df and canal_atual:
-            # Extrai valores de range
             range_valor = dado_df.group(3).replace('*','').strip()
             if 'C' in range_valor:
                 temp_range, simplex_range = range_valor.split('/')
@@ -59,7 +59,6 @@ def parse_true_alarm(file):
             else:
                 temp_range = None
                 simplex_range = range_valor.split('/')[1].strip()
-            # Extrai valores atuais e picos
             atual_simplex = dado_df.group(5).strip()
             atual_perc = dado_df.group(6).strip()
             pico_simplex = dado_df.group(7).strip()
@@ -75,7 +74,8 @@ def parse_true_alarm(file):
                 'Atual_Perc': atual_perc,
                 'Pico_Simplex': pico_simplex,
                 'Pico_Perc': pico_perc,
-                'Status': dado_df.group(9)
+                'Status': dado_df.group(9),
+                'Tipo': 'DF'
             })
     return pd.DataFrame(dados)
 
