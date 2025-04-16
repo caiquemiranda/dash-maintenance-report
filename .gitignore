@@ -173,3 +173,6 @@ cython_debug/
 
 # logs data
 TroubleLog.txt
+
+# TrueAlarmService
+TrueAlarmService.txt
