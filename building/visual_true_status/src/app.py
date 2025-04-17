@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import re
 import plotly.express as px
+import plotly.graph_objects as go
 
 st.set_page_config(page_title="Dashboard TrueAlarm", layout="wide")
 st.title("Dashboard TrueAlarm - Sensores")
@@ -112,60 +113,104 @@ if uploaded_file:
             df.loc[mask, col] = 0
             df.loc[mask, 'Acionado_Max'] = True
 
-    # Slider para escolher o TOP
-    st.sidebar.header('Configurações de Visualização')
-    top_n = st.sidebar.slider('Escolha o TOP', min_value=5, max_value=50, value=20, step=1)
-
+    # Slider para escolher o TOP (agora no conteúdo)
     st.header("Visualizações e Análises")
-    # Layout horizontal organizado
-    col1, col2 = st.columns(2)
-    col3, col4 = st.columns(2)
+    top_n = st.slider('Escolha o TOP', min_value=5, max_value=50, value=20, step=1)
 
-    # Top N maiores valores de Pico (DF)
-    with col1:
-        st.subheader(f"Top {top_n} maiores valores de Pico (DF - Fumaça)")
+    # Layout em boxes: cada linha = tabela + gráfico
+    # 1ª linha: Pico DF
+    box1, box2 = st.columns(2)
+    with box1:
+        st.subheader(f"Top {top_n} Pico Simplex (DF)")
         top_df = df[df['Tipo'] == 'DF'].sort_values('Pico_Simplex', ascending=False).head(top_n)
         st.dataframe(top_df[['Dispositivo', 'Descricao', 'Canal', 'Pico_Simplex', 'Status']])
+    with box2:
+        st.subheader(f"Top {top_n} Pico Simplex (DF)")
         fig_df = px.bar(top_df, x='Pico_Simplex', y='Descricao', orientation='h', title=f'Top {top_n} Pico Simplex (DF)', labels={'Pico_Simplex':'Pico Simplex', 'Descricao':'Descrição'})
         st.plotly_chart(fig_df, use_container_width=True)
 
-    # Top N maiores valores de Pico (DT)
-    with col2:
-        st.subheader(f"Top {top_n} maiores temperaturas (DT - Temperatura)")
+    # 2ª linha: Pico DT
+    box3, box4 = st.columns(2)
+    with box3:
+        st.subheader(f"Top {top_n} Pico Temperatura (DT)")
         top_dt = df[df['Tipo'] == 'DT'].sort_values('Pico_Temp', ascending=False).head(top_n)
         st.dataframe(top_dt[['Dispositivo', 'Descricao', 'Canal', 'Pico_Temp', 'Status']])
+    with box4:
+        st.subheader(f"Top {top_n} Pico Temperatura (DT)")
         fig_dt = px.bar(top_dt, x='Pico_Temp', y='Descricao', orientation='h', title=f'Top {top_n} Pico Temperatura (DT)', labels={'Pico_Temp':'Pico Temperatura', 'Descricao':'Descrição'})
         st.plotly_chart(fig_dt, use_container_width=True)
 
-    # Top N valores atuais (DF)
-    with col3:
-        st.subheader(f"Top {top_n} maiores valores atuais (DF - Fumaça)")
+    # 3ª linha: Valor Atual DF (com cor)
+    box5, box6 = st.columns(2)
+    with box5:
+        st.subheader(f"Top {top_n} Valor Atual Simplex (DF)")
         top_df_atual = df[df['Tipo'] == 'DF'].sort_values('Atual_Simplex', ascending=False).head(top_n)
         st.dataframe(top_df_atual[['Dispositivo', 'Descricao', 'Canal', 'Atual_Simplex', 'Status']])
-        fig_df_atual = px.bar(top_df_atual, x='Atual_Simplex', y='Descricao', orientation='h', title=f'Top {top_n} Valor Atual Simplex (DF)', labels={'Atual_Simplex':'Valor Atual', 'Descricao':'Descrição'})
+    with box6:
+        st.subheader(f"Top {top_n} Valor Atual Simplex (DF)")
+        # Cores condicionais
+        colors = [
+            '#ff4d4d' if v > 95 else '#ffe066' if v > 85 else '#3498db'
+            for v in top_df_atual['Atual_Simplex'].fillna(0)
+        ]
+        fig_df_atual = go.Figure(go.Bar(
+            x=top_df_atual['Atual_Simplex'],
+            y=top_df_atual['Descricao'],
+            orientation='h',
+            marker_color=colors
+        ))
+        fig_df_atual.update_layout(title=f'Top {top_n} Valor Atual Simplex (DF)', xaxis_title='Valor Atual', yaxis_title='Descrição')
         st.plotly_chart(fig_df_atual, use_container_width=True)
 
-    # Top N valores atuais (DT)
-    with col4:
-        st.subheader(f"Top {top_n} maiores temperaturas atuais (DT - Temperatura)")
+    # 4ª linha: Valor Atual DT (com cor)
+    box7, box8 = st.columns(2)
+    with box7:
+        st.subheader(f"Top {top_n} Temperatura Atual (DT)")
         top_dt_atual = df[df['Tipo'] == 'DT'].sort_values('Atual_Temp', ascending=False).head(top_n)
         st.dataframe(top_dt_atual[['Dispositivo', 'Descricao', 'Canal', 'Atual_Temp', 'Status']])
-        fig_dt_atual = px.bar(top_dt_atual, x='Atual_Temp', y='Descricao', orientation='h', title=f'Top {top_n} Temperatura Atual (DT)', labels={'Atual_Temp':'Temperatura Atual', 'Descricao':'Descrição'})
+    with box8:
+        st.subheader(f"Top {top_n} Temperatura Atual (DT)")
+        colors_dt = [
+            '#ff4d4d' if v > 95 else '#ffe066' if v > 85 else '#3498db'
+            for v in top_dt_atual['Atual_Temp'].fillna(0)
+        ]
+        fig_dt_atual = go.Figure(go.Bar(
+            x=top_dt_atual['Atual_Temp'],
+            y=top_dt_atual['Descricao'],
+            orientation='h',
+            marker_color=colors_dt
+        ))
+        fig_dt_atual.update_layout(title=f'Top {top_n} Temperatura Atual (DT)', xaxis_title='Temperatura Atual', yaxis_title='Descrição')
         st.plotly_chart(fig_dt_atual, use_container_width=True)
 
-    # Percentual de cada tipo
-    st.subheader("Percentual de cada tipo de sensor no sistema")
-    tipo_counts = df['Tipo'].value_counts().reset_index()
-    tipo_counts.columns = ['Tipo', 'Quantidade']
-    fig_tipo = px.pie(tipo_counts, values='Quantidade', names='Tipo', title='Distribuição de Sensores DF x DT')
-    st.plotly_chart(fig_tipo, use_container_width=True)
-
-    # Quantidade de dispositivos por canal
-    st.subheader("Quantidade de dispositivos por canal")
-    canal_counts = df.groupby('Canal').size().reset_index(name='Quantidade')
-    canal_counts = canal_counts.sort_values('Canal')
-    fig_canal = px.bar(canal_counts, x='Canal', y='Quantidade', title='Dispositivos por Canal')
-    st.plotly_chart(fig_canal, use_container_width=True)
+    # 5ª linha: Percentual de cada tipo
+    box9, box10 = st.columns(2)
+    with box9:
+        st.subheader("Percentual de cada tipo de sensor no sistema")
+        tipo_counts = df['Tipo'].value_counts().reset_index()
+        tipo_counts.columns = ['Tipo', 'Quantidade']
+        fig_tipo = px.pie(tipo_counts, values='Quantidade', names='Tipo', title='Distribuição de Sensores DF x DT')
+        st.plotly_chart(fig_tipo, use_container_width=True)
+    with box10:
+        st.subheader("Quantidade de dispositivos por canal (Disponibilidade)")
+        canal_counts = df.groupby('Canal').size().reset_index(name='Quantidade')
+        canal_counts = canal_counts.sort_values('Canal')
+        # Barras azuis para quantidade existente, verdes para disponibilidade
+        fig_canal = go.Figure()
+        fig_canal.add_trace(go.Bar(
+            x=canal_counts['Canal'],
+            y=canal_counts['Quantidade'],
+            name='Existente',
+            marker_color='#3498db'
+        ))
+        fig_canal.add_trace(go.Bar(
+            x=canal_counts['Canal'],
+            y=[max(0, 250-q) for q in canal_counts['Quantidade']],
+            name='Disponível',
+            marker_color='#2ecc40'
+        ))
+        fig_canal.update_layout(barmode='stack', title='Dispositivos por Canal (até 250)', xaxis_title='Canal', yaxis_title='Quantidade')
+        st.plotly_chart(fig_canal, use_container_width=True)
 
     # Lista de dispositivos acionados no máximo (pico 255)
     st.subheader('Dispositivos acionados no máximo (Pico = 255)')
