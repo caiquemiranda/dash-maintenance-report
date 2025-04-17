@@ -96,38 +96,62 @@ if uploaded_file:
     df['Atual_Simplex'] = pd.to_numeric(df['Atual_Simplex'], errors='coerce')
     df['Atual_Temp'] = pd.to_numeric(df['Atual_Temp'], errors='coerce')
 
-    st.header("Visualizações e Análises")
-    col1, col2 = st.columns(2)
+    # Padronizar nome do canal para M01, M02, ...
+    def padroniza_canal(canal):
+        match = re.match(r'M(\d+)', canal)
+        if match:
+            return f"M{int(match.group(1)):02d}"
+        return canal
+    df['Canal'] = df['Canal'].apply(padroniza_canal)
 
-    # Top 20 maiores valores de Pico (DF)
+    # Zerar valor de pico 255 e marcar dispositivos acionados
+    df['Acionado_Max'] = False
+    for col in ['Pico_Simplex', 'Pico_Temp']:
+        if col in df.columns:
+            mask = df[col] == 255
+            df.loc[mask, col] = 0
+            df.loc[mask, 'Acionado_Max'] = True
+
+    # Slider para escolher o TOP
+    st.sidebar.header('Configurações de Visualização')
+    top_n = st.sidebar.slider('Escolha o TOP', min_value=5, max_value=50, value=20, step=1)
+
+    st.header("Visualizações e Análises")
+    # Layout horizontal organizado
+    col1, col2 = st.columns(2)
+    col3, col4 = st.columns(2)
+
+    # Top N maiores valores de Pico (DF)
     with col1:
-        st.subheader("Top 20 maiores valores de Pico (DF - Fumaça)")
-        top_df = df[df['Tipo'] == 'DF'].sort_values('Pico_Simplex', ascending=False).head(20)
+        st.subheader(f"Top {top_n} maiores valores de Pico (DF - Fumaça)")
+        top_df = df[df['Tipo'] == 'DF'].sort_values('Pico_Simplex', ascending=False).head(top_n)
         st.dataframe(top_df[['Dispositivo', 'Descricao', 'Canal', 'Pico_Simplex', 'Status']])
-        fig_df = px.bar(top_df, x='Pico_Simplex', y='Descricao', orientation='h', title='Top 20 Pico Simplex (DF)', labels={'Pico_Simplex':'Pico Simplex', 'Descricao':'Descrição'})
+        fig_df = px.bar(top_df, x='Pico_Simplex', y='Descricao', orientation='h', title=f'Top {top_n} Pico Simplex (DF)', labels={'Pico_Simplex':'Pico Simplex', 'Descricao':'Descrição'})
         st.plotly_chart(fig_df, use_container_width=True)
 
-    # Top 20 maiores valores de Pico (DT)
+    # Top N maiores valores de Pico (DT)
     with col2:
-        st.subheader("Top 20 maiores temperaturas (DT - Temperatura)")
-        top_dt = df[df['Tipo'] == 'DT'].sort_values('Pico_Temp', ascending=False).head(20)
+        st.subheader(f"Top {top_n} maiores temperaturas (DT - Temperatura)")
+        top_dt = df[df['Tipo'] == 'DT'].sort_values('Pico_Temp', ascending=False).head(top_n)
         st.dataframe(top_dt[['Dispositivo', 'Descricao', 'Canal', 'Pico_Temp', 'Status']])
-        fig_dt = px.bar(top_dt, x='Pico_Temp', y='Descricao', orientation='h', title='Top 20 Pico Temperatura (DT)', labels={'Pico_Temp':'Pico Temperatura', 'Descricao':'Descrição'})
+        fig_dt = px.bar(top_dt, x='Pico_Temp', y='Descricao', orientation='h', title=f'Top {top_n} Pico Temperatura (DT)', labels={'Pico_Temp':'Pico Temperatura', 'Descricao':'Descrição'})
         st.plotly_chart(fig_dt, use_container_width=True)
 
-    # Top 20 valores atuais (DF)
-    st.subheader("Top 20 maiores valores atuais (DF - Fumaça)")
-    top_df_atual = df[df['Tipo'] == 'DF'].sort_values('Atual_Simplex', ascending=False).head(20)
-    st.dataframe(top_df_atual[['Dispositivo', 'Descricao', 'Canal', 'Atual_Simplex', 'Status']])
-    fig_df_atual = px.bar(top_df_atual, x='Atual_Simplex', y='Descricao', orientation='h', title='Top 20 Valor Atual Simplex (DF)', labels={'Atual_Simplex':'Valor Atual', 'Descricao':'Descrição'})
-    st.plotly_chart(fig_df_atual, use_container_width=True)
+    # Top N valores atuais (DF)
+    with col3:
+        st.subheader(f"Top {top_n} maiores valores atuais (DF - Fumaça)")
+        top_df_atual = df[df['Tipo'] == 'DF'].sort_values('Atual_Simplex', ascending=False).head(top_n)
+        st.dataframe(top_df_atual[['Dispositivo', 'Descricao', 'Canal', 'Atual_Simplex', 'Status']])
+        fig_df_atual = px.bar(top_df_atual, x='Atual_Simplex', y='Descricao', orientation='h', title=f'Top {top_n} Valor Atual Simplex (DF)', labels={'Atual_Simplex':'Valor Atual', 'Descricao':'Descrição'})
+        st.plotly_chart(fig_df_atual, use_container_width=True)
 
-    # Top 20 valores atuais (DT)
-    st.subheader("Top 20 maiores temperaturas atuais (DT - Temperatura)")
-    top_dt_atual = df[df['Tipo'] == 'DT'].sort_values('Atual_Temp', ascending=False).head(20)
-    st.dataframe(top_dt_atual[['Dispositivo', 'Descricao', 'Canal', 'Atual_Temp', 'Status']])
-    fig_dt_atual = px.bar(top_dt_atual, x='Atual_Temp', y='Descricao', orientation='h', title='Top 20 Temperatura Atual (DT)', labels={'Atual_Temp':'Temperatura Atual', 'Descricao':'Descrição'})
-    st.plotly_chart(fig_dt_atual, use_container_width=True)
+    # Top N valores atuais (DT)
+    with col4:
+        st.subheader(f"Top {top_n} maiores temperaturas atuais (DT - Temperatura)")
+        top_dt_atual = df[df['Tipo'] == 'DT'].sort_values('Atual_Temp', ascending=False).head(top_n)
+        st.dataframe(top_dt_atual[['Dispositivo', 'Descricao', 'Canal', 'Atual_Temp', 'Status']])
+        fig_dt_atual = px.bar(top_dt_atual, x='Atual_Temp', y='Descricao', orientation='h', title=f'Top {top_n} Temperatura Atual (DT)', labels={'Atual_Temp':'Temperatura Atual', 'Descricao':'Descrição'})
+        st.plotly_chart(fig_dt_atual, use_container_width=True)
 
     # Percentual de cada tipo
     st.subheader("Percentual de cada tipo de sensor no sistema")
@@ -139,7 +163,18 @@ if uploaded_file:
     # Quantidade de dispositivos por canal
     st.subheader("Quantidade de dispositivos por canal")
     canal_counts = df.groupby('Canal').size().reset_index(name='Quantidade')
+    canal_counts = canal_counts.sort_values('Canal')
     fig_canal = px.bar(canal_counts, x='Canal', y='Quantidade', title='Dispositivos por Canal')
     st.plotly_chart(fig_canal, use_container_width=True)
+
+    # Lista de dispositivos acionados no máximo (pico 255)
+    st.subheader('Dispositivos acionados no máximo (Pico = 255)')
+    acionados = df[df['Acionado_Max']]
+    def highlight_red(s):
+        return ['background-color: #ff4d4d' for _ in s]
+    if not acionados.empty:
+        st.dataframe(acionados[['Dispositivo', 'Descricao', 'Canal', 'Tipo', 'Status']].style.apply(highlight_red, axis=1))
+    else:
+        st.info('Nenhum dispositivo acionado no máximo.')
 else:
     st.info("Faça upload do arquivo para visualizar os dados.") 
