@@ -4,6 +4,7 @@ import re
 import plotly.express as px
 import plotly.graph_objects as go
 import os
+from datetime import datetime
 
 st.set_page_config(page_title="Dashboard TrueAlarm", layout="wide")
 st.title("Dashboard TrueAlarm - Sensores")
@@ -98,10 +99,13 @@ if uploaded_file:
     dados = parse_true_alarm(uploaded_file)
     st.success(f"{len(dados)} linhas processadas do arquivo enviado.")
     # Opção de salvar
+    default_name = f"historico_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+    fname = st.sidebar.text_input('Nome do arquivo para salvar', value=default_name, key='savefile')
     if st.sidebar.button('Salvar este dataset no histórico'):
-        fname = st.sidebar.text_input('Nome do arquivo para salvar', value='historico.csv', key='savefile')
-        if fname:
-            path = os.path.join(HIST_DIR, fname)
+        path = os.path.join(HIST_DIR, fname)
+        if os.path.exists(path):
+            st.sidebar.error(f'Já existe um arquivo com esse nome! Escolha outro nome.')
+        else:
             dados.to_csv(path, index=False)
             st.sidebar.success(f'Salvo como {fname}')
 elif selected_hist and selected_hist in hist_files:
@@ -176,7 +180,7 @@ if dados is not None:
     with box5:
         st.subheader(f"Top {top_n} Valor Atual Simplex (DF)")
         top_df_atual = df[df['Tipo'] == 'DF'].sort_values('Atual_Simplex', ascending=False).head(top_n)
-        styled_df = top_df_atual[['Dispositivo', 'Descricao', 'Canal', 'Atual_Simplex', 'Status']].style.applymap(highlight_valor_atual, subset=['Atual_Simplex'])
+        styled_df = top_df_atual[['Dispositivo', 'Descricao', 'Canal', 'Atual_Simplex', 'Status']].style.map(highlight_valor_atual, subset=['Atual_Simplex'])
         st.dataframe(styled_df)
     with box6:
         st.subheader(f"Top {top_n} Valor Atual Simplex (DF)")
@@ -198,7 +202,7 @@ if dados is not None:
     with box7:
         st.subheader(f"Top {top_n} Temperatura Atual (DT)")
         top_dt_atual = df[df['Tipo'] == 'DT'].sort_values('Atual_Temp', ascending=False).head(top_n)
-        styled_dt = top_dt_atual[['Dispositivo', 'Descricao', 'Canal', 'Atual_Temp', 'Status']].style.applymap(highlight_valor_atual, subset=['Atual_Temp'])
+        styled_dt = top_dt_atual[['Dispositivo', 'Descricao', 'Canal', 'Atual_Temp', 'Status']].style.map(highlight_valor_atual, subset=['Atual_Temp'])
         st.dataframe(styled_dt)
     with box8:
         st.subheader(f"Top {top_n} Temperatura Atual (DT)")
@@ -236,6 +240,6 @@ if dados is not None:
     def highlight_red(s):
         return ['background-color: #ff4d4d' for _ in s]
     if not acionados.empty:
-        st.dataframe(acionados[['Dispositivo', 'Descricao', 'Canal', 'Tipo', 'Status']].style.apply(highlight_red, axis=1))
+        st.dataframe(acionados[['Dispositivo', 'Descricao', 'Canal', 'Tipo', 'Status']].style.map(lambda _: 'background-color: #ff4d4d', subset=pd.IndexSlice[:, :]))
     else:
         st.info('Nenhum dispositivo acionado no máximo.') 
