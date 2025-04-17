@@ -115,7 +115,7 @@ if uploaded_file:
 
     # Slider para escolher o TOP (agora no conteúdo)
     st.header("Visualizações e Análises")
-    top_n = st.slider('Escolha o TOP', min_value=5, max_value=50, value=20, step=1)
+    top_n = st.slider('Escolha o TOP', min_value=5, max_value=100, value=20, step=1)
 
     # Layout em boxes: cada linha = tabela + gráfico
     # 1ª linha: Pico DF
