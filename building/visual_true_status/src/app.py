@@ -19,7 +19,8 @@ def parse_true_alarm(file):
         linhas = file
     dados = []
     canal_atual = None
-    regex_canal = re.compile(r"Channel (\d+) \((M\d)\)")
+    # Ajuste: aceita M seguido de 1 ou mais dígitos
+    regex_canal = re.compile(r"Channel (\d+) \((M\d+)\)")
     # Regex para DF (padrão)
     regex_df = re.compile(r"^\s*(\d{1,4}(?:-\d)?)\s+(.+?)\s+([*\d.]+/[\d ]+)\s+(\d{1,3}|--)\s+(\d{1,3}|--)\/(\s*\d{1,3}%|\s*--|\s*\d{1,3}C)\s+(\d{1,3}|--)\/(\s*\d{1,3}%|\s*--|\s*\d{1,3}C)\s+(\w{3})$")
     # Regex para DT (temperatura) - identifica pelo valor inicial \d{1,3}C/\d{1,4}
@@ -92,25 +93,41 @@ if uploaded_file:
     df = dados.copy()
     df['Pico_Simplex'] = pd.to_numeric(df['Pico_Simplex'], errors='coerce')
     df['Pico_Temp'] = pd.to_numeric(df['Pico_Temp'], errors='coerce')
+    df['Atual_Simplex'] = pd.to_numeric(df['Atual_Simplex'], errors='coerce')
+    df['Atual_Temp'] = pd.to_numeric(df['Atual_Temp'], errors='coerce')
 
     st.header("Visualizações e Análises")
     col1, col2 = st.columns(2)
 
-    # Maiores valores de DF
+    # Top 20 maiores valores de Pico (DF)
     with col1:
-        st.subheader("Top 10 maiores valores de Pico (DF - Fumaça)")
-        top_df = df[df['Tipo'] == 'DF'].sort_values('Pico_Simplex', ascending=False).head(10)
+        st.subheader("Top 20 maiores valores de Pico (DF - Fumaça)")
+        top_df = df[df['Tipo'] == 'DF'].sort_values('Pico_Simplex', ascending=False).head(20)
         st.dataframe(top_df[['Dispositivo', 'Descricao', 'Canal', 'Pico_Simplex', 'Status']])
-        fig_df = px.bar(top_df, x='Pico_Simplex', y='Descricao', orientation='h', title='Top 10 Pico Simplex (DF)', labels={'Pico_Simplex':'Pico Simplex', 'Descricao':'Descrição'})
+        fig_df = px.bar(top_df, x='Pico_Simplex', y='Descricao', orientation='h', title='Top 20 Pico Simplex (DF)', labels={'Pico_Simplex':'Pico Simplex', 'Descricao':'Descrição'})
         st.plotly_chart(fig_df, use_container_width=True)
 
-    # Maiores valores de DT
+    # Top 20 maiores valores de Pico (DT)
     with col2:
-        st.subheader("Top 10 maiores temperaturas (DT - Temperatura)")
-        top_dt = df[df['Tipo'] == 'DT'].sort_values('Pico_Temp', ascending=False).head(10)
+        st.subheader("Top 20 maiores temperaturas (DT - Temperatura)")
+        top_dt = df[df['Tipo'] == 'DT'].sort_values('Pico_Temp', ascending=False).head(20)
         st.dataframe(top_dt[['Dispositivo', 'Descricao', 'Canal', 'Pico_Temp', 'Status']])
-        fig_dt = px.bar(top_dt, x='Pico_Temp', y='Descricao', orientation='h', title='Top 10 Pico Temperatura (DT)', labels={'Pico_Temp':'Pico Temperatura', 'Descricao':'Descrição'})
+        fig_dt = px.bar(top_dt, x='Pico_Temp', y='Descricao', orientation='h', title='Top 20 Pico Temperatura (DT)', labels={'Pico_Temp':'Pico Temperatura', 'Descricao':'Descrição'})
         st.plotly_chart(fig_dt, use_container_width=True)
+
+    # Top 20 valores atuais (DF)
+    st.subheader("Top 20 maiores valores atuais (DF - Fumaça)")
+    top_df_atual = df[df['Tipo'] == 'DF'].sort_values('Atual_Simplex', ascending=False).head(20)
+    st.dataframe(top_df_atual[['Dispositivo', 'Descricao', 'Canal', 'Atual_Simplex', 'Status']])
+    fig_df_atual = px.bar(top_df_atual, x='Atual_Simplex', y='Descricao', orientation='h', title='Top 20 Valor Atual Simplex (DF)', labels={'Atual_Simplex':'Valor Atual', 'Descricao':'Descrição'})
+    st.plotly_chart(fig_df_atual, use_container_width=True)
+
+    # Top 20 valores atuais (DT)
+    st.subheader("Top 20 maiores temperaturas atuais (DT - Temperatura)")
+    top_dt_atual = df[df['Tipo'] == 'DT'].sort_values('Atual_Temp', ascending=False).head(20)
+    st.dataframe(top_dt_atual[['Dispositivo', 'Descricao', 'Canal', 'Atual_Temp', 'Status']])
+    fig_dt_atual = px.bar(top_dt_atual, x='Atual_Temp', y='Descricao', orientation='h', title='Top 20 Temperatura Atual (DT)', labels={'Atual_Temp':'Temperatura Atual', 'Descricao':'Descrição'})
+    st.plotly_chart(fig_dt_atual, use_container_width=True)
 
     # Percentual de cada tipo
     st.subheader("Percentual de cada tipo de sensor no sistema")
