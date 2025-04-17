@@ -3,9 +3,13 @@ import pandas as pd
 import re
 import plotly.express as px
 import plotly.graph_objects as go
+import os
 
 st.set_page_config(page_title="Dashboard TrueAlarm", layout="wide")
 st.title("Dashboard TrueAlarm - Sensores")
+
+HIST_DIR = 'historico_dados'
+os.makedirs(HIST_DIR, exist_ok=True)
 
 # Função para parsear o arquivo
 
@@ -82,14 +86,32 @@ def parse_true_alarm(file):
             })
     return pd.DataFrame(dados)
 
-# Upload do arquivo
+# Sidebar: histórico de arquivos
+st.sidebar.header('Histórico de Dados')
+hist_files = [f for f in os.listdir(HIST_DIR) if f.endswith('.csv')]
+selected_hist = st.sidebar.selectbox('Carregar histórico', [''] + hist_files)
+
 dados = None
 uploaded_file = st.file_uploader("Faça upload do arquivo TrueAlarmService.txt", type=["txt"])
+
 if uploaded_file:
     dados = parse_true_alarm(uploaded_file)
-    st.success(f"{len(dados)} linhas processadas.")
-    st.dataframe(dados)
+    st.success(f"{len(dados)} linhas processadas do arquivo enviado.")
+    # Opção de salvar
+    if st.sidebar.button('Salvar este dataset no histórico'):
+        fname = st.sidebar.text_input('Nome do arquivo para salvar', value='historico.csv', key='savefile')
+        if fname:
+            path = os.path.join(HIST_DIR, fname)
+            dados.to_csv(path, index=False)
+            st.sidebar.success(f'Salvo como {fname}')
+elif selected_hist and selected_hist in hist_files:
+    dados = pd.read_csv(os.path.join(HIST_DIR, selected_hist))
+    st.success(f"{len(dados)} linhas carregadas do histórico: {selected_hist}")
+else:
+    st.info("Faça upload do arquivo ou selecione um histórico na barra lateral.")
 
+if dados is not None:
+    st.dataframe(dados)
     # Conversão de colunas para numérico onde possível
     df = dados.copy()
     df['Pico_Simplex'] = pd.to_numeric(df['Pico_Simplex'], errors='coerce')
@@ -99,7 +121,7 @@ if uploaded_file:
 
     # Padronizar nome do canal para M01, M02, ...
     def padroniza_canal(canal):
-        match = re.match(r'M(\d+)', canal)
+        match = re.match(r'M(\d+)', str(canal))
         if match:
             return f"M{int(match.group(1)):02d}"
         return canal
@@ -113,11 +135,20 @@ if uploaded_file:
             df.loc[mask, col] = 0
             df.loc[mask, 'Acionado_Max'] = True
 
-    # Slider para escolher o TOP (agora no conteúdo)
     st.header("Visualizações e Análises")
     top_n = st.slider('Escolha o TOP', min_value=5, max_value=100, value=20, step=1)
 
-    # Layout em boxes: cada linha = tabela + gráfico
+    # Função de cor para DataFrame
+    def highlight_valor_atual(val):
+        if pd.isnull(val):
+            return ''
+        if val > 95:
+            return 'background-color: #ff4d4d; color: black;'
+        elif val > 88:
+            return 'background-color: #ffe066; color: black;'
+        else:
+            return 'background-color: #3498db; color: white;'
+
     # 1ª linha: Pico DF
     box1, box2 = st.columns(2)
     with box1:
@@ -145,12 +176,12 @@ if uploaded_file:
     with box5:
         st.subheader(f"Top {top_n} Valor Atual Simplex (DF)")
         top_df_atual = df[df['Tipo'] == 'DF'].sort_values('Atual_Simplex', ascending=False).head(top_n)
-        st.dataframe(top_df_atual[['Dispositivo', 'Descricao', 'Canal', 'Atual_Simplex', 'Status']])
+        styled_df = top_df_atual[['Dispositivo', 'Descricao', 'Canal', 'Atual_Simplex', 'Status']].style.applymap(highlight_valor_atual, subset=['Atual_Simplex'])
+        st.dataframe(styled_df)
     with box6:
         st.subheader(f"Top {top_n} Valor Atual Simplex (DF)")
-        # Cores condicionais
         colors = [
-            '#ff4d4d' if v > 95 else '#ffe066' if v > 85 else '#3498db'
+            '#ff4d4d' if v > 95 else '#ffe066' if v > 88 else '#3498db'
             for v in top_df_atual['Atual_Simplex'].fillna(0)
         ]
         fig_df_atual = go.Figure(go.Bar(
@@ -167,11 +198,12 @@ if uploaded_file:
     with box7:
         st.subheader(f"Top {top_n} Temperatura Atual (DT)")
         top_dt_atual = df[df['Tipo'] == 'DT'].sort_values('Atual_Temp', ascending=False).head(top_n)
-        st.dataframe(top_dt_atual[['Dispositivo', 'Descricao', 'Canal', 'Atual_Temp', 'Status']])
+        styled_dt = top_dt_atual[['Dispositivo', 'Descricao', 'Canal', 'Atual_Temp', 'Status']].style.applymap(highlight_valor_atual, subset=['Atual_Temp'])
+        st.dataframe(styled_dt)
     with box8:
         st.subheader(f"Top {top_n} Temperatura Atual (DT)")
         colors_dt = [
-            '#ff4d4d' if v > 95 else '#ffe066' if v > 85 else '#3498db'
+            '#ff4d4d' if v > 95 else '#ffe066' if v > 88 else '#3498db'
             for v in top_dt_atual['Atual_Temp'].fillna(0)
         ]
         fig_dt_atual = go.Figure(go.Bar(
@@ -192,24 +224,10 @@ if uploaded_file:
         fig_tipo = px.pie(tipo_counts, values='Quantidade', names='Tipo', title='Distribuição de Sensores DF x DT')
         st.plotly_chart(fig_tipo, use_container_width=True)
     with box10:
-        st.subheader("Quantidade de dispositivos por canal (Disponibilidade)")
+        st.subheader("Quantidade de dispositivos por canal")
         canal_counts = df.groupby('Canal').size().reset_index(name='Quantidade')
         canal_counts = canal_counts.sort_values('Canal')
-        # Barras azuis para quantidade existente, verdes para disponibilidade
-        fig_canal = go.Figure()
-        fig_canal.add_trace(go.Bar(
-            x=canal_counts['Canal'],
-            y=canal_counts['Quantidade'],
-            name='Existente',
-            marker_color='#3498db'
-        ))
-        fig_canal.add_trace(go.Bar(
-            x=canal_counts['Canal'],
-            y=[max(0, 250-q) for q in canal_counts['Quantidade']],
-            name='Disponível',
-            marker_color='#2ecc40'
-        ))
-        fig_canal.update_layout(barmode='stack', title='Dispositivos por Canal (até 250)', xaxis_title='Canal', yaxis_title='Quantidade')
+        fig_canal = px.bar(canal_counts, x='Canal', y='Quantidade', title='Dispositivos por Canal', labels={'Canal':'Canal', 'Quantidade':'Quantidade'})
         st.plotly_chart(fig_canal, use_container_width=True)
 
     # Lista de dispositivos acionados no máximo (pico 255)
@@ -220,6 +238,4 @@ if uploaded_file:
     if not acionados.empty:
         st.dataframe(acionados[['Dispositivo', 'Descricao', 'Canal', 'Tipo', 'Status']].style.apply(highlight_red, axis=1))
     else:
-        st.info('Nenhum dispositivo acionado no máximo.')
-else:
-    st.info("Faça upload do arquivo para visualizar os dados.") 
+        st.info('Nenhum dispositivo acionado no máximo.') 
