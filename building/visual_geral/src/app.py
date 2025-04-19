@@ -89,19 +89,56 @@ def pagina_dispositivos(cliente):
     
     # Mostrar dados em DataFrame
     df = pd.DataFrame(dados)
-    st.dataframe(df)
+    
+    # Adicionar opções de filtro
+    st.markdown("### Filtros")
+    col1, col2, col3 = st.columns(3)
+    
+    # Filtro por tipo
+    with col1:
+        tipos_unicos = sorted(df['type'].unique())
+        tipo_selecionado = st.multiselect("Filtrar por Tipo:", tipos_unicos)
+    
+    # Filtro por texto na descrição
+    with col2:
+        texto_busca = st.text_input("Buscar na descrição:")
+    
+    # Opção para mostrar/ocultar UNUSED
+    with col3:
+        mostrar_unused = st.checkbox("Mostrar UNUSED", value=True)
+    
+    # Aplicar filtros
+    df_filtrado = df.copy()
+    
+    # Filtro por tipo
+    if tipo_selecionado:
+        df_filtrado = df_filtrado[df_filtrado['type'].isin(tipo_selecionado)]
+    
+    # Filtro por texto na descrição
+    if texto_busca:
+        df_filtrado = df_filtrado[df_filtrado['description'].str.contains(texto_busca, case=False, na=False)]
+    
+    # Filtro UNUSED
+    if not mostrar_unused:
+        df_filtrado = df_filtrado[df_filtrado['type'] != 'UNUSED']
+    
+    # Exibir estatísticas sobre os filtros
+    st.markdown(f"**Mostrando {len(df_filtrado)} de {len(df)} dispositivos.**")
+    
+    # Mostrar dataframe filtrado
+    st.dataframe(df_filtrado)
     
     # Adicionar análises e visualizações
-    if not df.empty:
+    if not df_filtrado.empty:
         # Contagem por tipo
         st.subheader("Distribuição por Tipo")
-        contagem_tipo = df['type'].value_counts()
+        contagem_tipo = df_filtrado['type'].value_counts()
         st.bar_chart(contagem_tipo)
         
         # Contagem por ação
-        if 'action' in df.columns and not df['action'].empty:
+        if 'action' in df_filtrado.columns and not df_filtrado['action'].isnull().all():
             st.subheader("Distribuição por Ação")
-            contagem_acao = df['action'].value_counts()
+            contagem_acao = df_filtrado['action'].value_counts()
             st.bar_chart(contagem_acao)
 
 def pagina_upload(cliente):
