@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 
 # Simulação de clientes cadastrados (depois virá do banco)
-CLIENTES = ['Cliente A', 'Cliente B', 'Cliente C']
+CLIENTES = ['BRD', 'BYR', 'AERO', 'BSC']
 
 # Simulação de navegação
 MENU_OPCOES = [
@@ -11,6 +11,8 @@ MENU_OPCOES = [
     'TrueAlarm',
     'Lista Dispositivos',
     'Plano de Manutenção',
+    'Manutenção Mensal',
+    'Saúde do Sistema',
     'Upload de Dados'
 ]
 
@@ -25,7 +27,17 @@ def main():
     # Sidebar: menu de navegação (aparece só após seleção do cliente)
     if cliente:
         st.sidebar.header("Menu")
-        opcao = st.sidebar.radio("Ir para", MENU_OPCOES)
+        # Botões de navegação, apenas botões, sem exibição redundante
+        if 'opcao_menu' not in st.session_state:
+            st.session_state['opcao_menu'] = MENU_OPCOES[0]
+        for op in MENU_OPCOES:
+            custom_style = ""
+            if op == st.session_state['opcao_menu']:
+                custom_style = f"<style>div[data-testid='stSidebar'] button[data-testid='baseButton'][aria-label='{op}'] {{background-color: #ff4b4b !important; color: white !important; border: none !important;}}</style>"
+                st.markdown(custom_style, unsafe_allow_html=True)
+            if st.sidebar.button(op, key=op, use_container_width=True, help=None):
+                st.session_state['opcao_menu'] = op
+        opcao = st.session_state['opcao_menu']
     else:
         opcao = None
 
@@ -52,6 +64,13 @@ def pagina_upload(cliente):
             st.dataframe(df_ts.head())
             if st.button("Salvar TrueService no banco", key="save_ts"):
                 st.success("Dados TrueService salvos! (simulado)")
+        st.markdown("### Dispositivos")
+        arquivo_disp = st.file_uploader("Upload .csv/.txt (Dispositivos)", type=["csv", "txt"], key="disp")
+        if arquivo_disp:
+            df_disp = pd.read_csv(arquivo_disp, sep=None, engine='python')
+            st.dataframe(df_disp.head())
+            if st.button("Salvar Dispositivos no banco", key="save_disp"):
+                st.success("Dados de Dispositivos salvos! (simulado)")
     with col2:
         st.markdown("### Log TrueAlarm")
         arquivo_ta = st.file_uploader("Upload .csv/.txt (TrueAlarm)", type=["csv", "txt"], key="ta")
@@ -60,6 +79,13 @@ def pagina_upload(cliente):
             st.dataframe(df_ta.head())
             if st.button("Salvar TrueAlarm no banco", key="save_ta"):
                 st.success("Dados TrueAlarm salvos! (simulado)")
+        st.markdown("### Histórico Geral")
+        arquivo_hist = st.file_uploader("Upload .csv/.txt (Histórico Geral)", type=["csv", "txt"], key="hist")
+        if arquivo_hist:
+            df_hist = pd.read_csv(arquivo_hist, sep=None, engine='python')
+            st.dataframe(df_hist.head())
+            if st.button("Salvar Histórico Geral no banco", key="save_hist"):
+                st.success("Dados de Histórico Geral salvos! (simulado)")
 
     st.markdown("---")
     st.markdown("Outros tipos de upload podem ser adicionados aqui...")
