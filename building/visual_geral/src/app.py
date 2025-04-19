@@ -1,5 +1,15 @@
 import streamlit as st
 import pandas as pd
+import os
+import sys
+
+# Importar módulos criados
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+import db
+import processamento
+
+# Inicializar o banco de dados
+db.init_db()
 
 # Simulação de clientes cadastrados (depois virá do banco)
 CLIENTES = ['BRD', 'BYR', 'AERO', 'BSC']
@@ -62,15 +72,46 @@ def main():
 
     if opcao == 'Upload de Dados':
         pagina_upload(cliente)
+    elif opcao == 'Lista Dispositivos':
+        pagina_dispositivos(cliente)
     else:
         st.write(f"Página: {opcao} (em construção)")
+
+def pagina_dispositivos(cliente):
+    st.subheader(f"Lista de Dispositivos - {cliente}")
+    
+    # Buscar dados do banco de dados
+    dados = db.buscar_pontos(cliente)
+    
+    if not dados:
+        st.info(f"Nenhum dispositivo cadastrado para {cliente}. Use a página de Upload para adicionar.")
+        return
+    
+    # Mostrar dados em DataFrame
+    df = pd.DataFrame(dados)
+    st.dataframe(df)
+    
+    # Adicionar análises e visualizações
+    if not df.empty:
+        # Contagem por tipo
+        st.subheader("Distribuição por Tipo")
+        contagem_tipo = df['type'].value_counts()
+        st.bar_chart(contagem_tipo)
+        
+        # Contagem por ação
+        if 'action' in df.columns and not df['action'].empty:
+            st.subheader("Distribuição por Ação")
+            contagem_acao = df['action'].value_counts()
+            st.bar_chart(contagem_acao)
 
 def pagina_upload(cliente):
     st.subheader(f"Upload de Dados - {cliente}")
     st.write("Escolha o tipo de arquivo para upload:")
 
-    col1, col2 = st.columns(2)
-    with col1:
+    # Criar abas para os diferentes tipos de upload
+    tab1, tab2, tab3, tab4 = st.tabs(["TrueService", "TrueAlarm", "Dispositivos", "Histórico Geral"])
+    
+    with tab1:
         st.markdown("### Log TrueService")
         arquivo_ts = st.file_uploader("Upload .csv/.txt (TrueService)", type=["csv", "txt"], key="ts")
         if arquivo_ts:
@@ -78,14 +119,8 @@ def pagina_upload(cliente):
             st.dataframe(df_ts.head())
             if st.button("Salvar TrueService no banco", key="save_ts"):
                 st.success("Dados TrueService salvos! (simulado)")
-        st.markdown("### Dispositivos")
-        arquivo_disp = st.file_uploader("Upload .csv/.txt (Dispositivos)", type=["csv", "txt"], key="disp")
-        if arquivo_disp:
-            df_disp = pd.read_csv(arquivo_disp, sep=None, engine='python')
-            st.dataframe(df_disp.head())
-            if st.button("Salvar Dispositivos no banco", key="save_disp"):
-                st.success("Dados de Dispositivos salvos! (simulado)")
-    with col2:
+    
+    with tab2:
         st.markdown("### Log TrueAlarm")
         arquivo_ta = st.file_uploader("Upload .csv/.txt (TrueAlarm)", type=["csv", "txt"], key="ta")
         if arquivo_ta:
@@ -93,6 +128,41 @@ def pagina_upload(cliente):
             st.dataframe(df_ta.head())
             if st.button("Salvar TrueAlarm no banco", key="save_ta"):
                 st.success("Dados TrueAlarm salvos! (simulado)")
+    
+    with tab3:
+        st.markdown("### Lista de Dispositivos")
+        arquivo_disp = st.file_uploader("Upload .csv/.txt (Lista de Dispositivos)", type=["csv", "txt"], key="disp")
+        if arquivo_disp:
+            try:
+                # Processar arquivo com função específica para lista de pontos
+                df_processado = processamento.processar_arquivo_pontos(arquivo_disp)
+                
+                # Mostrar dados processados
+                st.success(f"Arquivo processado com sucesso! Todos os {len(df_processado)} dispositivos foram carregados, incluindo UNUSED.")
+                st.dataframe(df_processado)
+                
+                # Adicionar análises
+                if not df_processado.empty:
+                    # Enriquecer dados
+                    df_enriquecido = processamento.enriquecer_dados(df_processado)
+                    
+                    # Mostrar distribuição por tipo
+                    st.subheader("Distribuição por Tipo")
+                    contagem_tipo = df_processado['type'].value_counts()
+                    st.bar_chart(contagem_tipo)
+                
+                # Botão para salvar no banco
+                if st.button("Salvar no banco", key="save_disp"):
+                    try:
+                        # Salvar no banco
+                        db.salvar_pontos(cliente, df_processado)
+                        st.success(f"Dados salvos com sucesso na tabela lista_de_pontos para o cliente {cliente}!")
+                    except Exception as e:
+                        st.error(f"Erro ao salvar dados: {str(e)}")
+            except Exception as e:
+                st.error(f"Erro ao processar arquivo: {str(e)}")
+    
+    with tab4:
         st.markdown("### Histórico Geral")
         arquivo_hist = st.file_uploader("Upload .csv/.txt (Histórico Geral)", type=["csv", "txt"], key="hist")
         if arquivo_hist:
@@ -100,9 +170,6 @@ def pagina_upload(cliente):
             st.dataframe(df_hist.head())
             if st.button("Salvar Histórico Geral no banco", key="save_hist"):
                 st.success("Dados de Histórico Geral salvos! (simulado)")
-
-    st.markdown("---")
-    st.markdown("Outros tipos de upload podem ser adicionados aqui...")
 
 if __name__ == "__main__":
     main()
