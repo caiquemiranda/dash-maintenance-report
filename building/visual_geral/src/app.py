@@ -7,12 +7,12 @@ CLIENTES = ['BRD', 'BYR', 'AERO', 'BSC']
 # Simulação de navegação
 MENU_OPCOES = [
     'Histórico Geral',
-    'TrueService',
-    'TrueAlarm',
+    'Saúde do Sistema',
     'Lista Dispositivos',
     'Plano de Manutenção',
     'Manutenção Mensal',
-    'Saúde do Sistema',
+    'TrueService',
+    'TrueAlarm',
     'Upload de Dados'
 ]
 
