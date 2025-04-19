@@ -27,16 +27,25 @@ def main():
     # Sidebar: menu de navegação (aparece só após seleção do cliente)
     if cliente:
         st.sidebar.header("Menu")
-        # Botões de navegação, apenas botões, sem exibição redundante
+        # CSS global para estilizar o botão selecionado
+        st.markdown('''
+            <style>
+            div[data-testid="stSidebar"] button.selected-btn {
+                background-color: #ff4b4b !important;
+                color: white !important;
+                border: none !important;
+            }
+            </style>
+        ''', unsafe_allow_html=True)
         if 'opcao_menu' not in st.session_state:
             st.session_state['opcao_menu'] = MENU_OPCOES[0]
         for op in MENU_OPCOES:
-            custom_style = ""
-            if op == st.session_state['opcao_menu']:
-                custom_style = f"<style>div[data-testid='stSidebar'] button[data-testid='baseButton'][aria-label='{op}'] {{background-color: #ff4b4b !important; color: white !important; border: none !important;}}</style>"
-                st.markdown(custom_style, unsafe_allow_html=True)
+            btn_class = "selected-btn" if op == st.session_state['opcao_menu'] else ""
             if st.sidebar.button(op, key=op, use_container_width=True, help=None):
                 st.session_state['opcao_menu'] = op
+            # Aplica a classe CSS ao botão selecionado
+            if btn_class:
+                st.markdown(f'''<style>div[data-testid="stSidebar"] button[data-testid="baseButton"][aria-label="{op}"] {{background-color: #ff4b4b !important; color: white !important; border: none !important;}}</style>''', unsafe_allow_html=True)
         opcao = st.session_state['opcao_menu']
     else:
         opcao = None
@@ -46,6 +55,7 @@ def main():
         st.info("Selecione um cliente para começar.")
         return
 
+    st.title(f"{opcao} - {cliente}")
     if opcao == 'Upload de Dados':
         pagina_upload(cliente)
     else:
