@@ -18,7 +18,7 @@ MENU_OPCOES = [
 
 def main():
     st.set_page_config(page_title="Dashboard de Manutenção", layout="wide")
-    st.title("Dashboard de Manutenção Multi-Cliente")
+    st.title(f"Dashboard de Manutenção - {cliente if cliente else ''}")
 
     # Sidebar: seleção de cliente
     st.sidebar.header("Selecione o Cliente")
