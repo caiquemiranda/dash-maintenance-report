@@ -18,11 +18,16 @@ MENU_OPCOES = [
 
 def main():
     st.set_page_config(page_title="Dashboard de Manutenção", layout="wide")
-    st.title(f"Dashboard de Manutenção - {cliente if cliente else ''}")
 
     # Sidebar: seleção de cliente
     st.sidebar.header("Selecione o Cliente")
     cliente = st.sidebar.selectbox("Cliente", CLIENTES)
+
+    # Exibir título principal apenas se cliente selecionado
+    if cliente:
+        st.title(f"Dashboard de Manutenção - {cliente}")
+    else:
+        st.title("Dashboard de Manutenção")
 
     # Sidebar: menu de navegação (aparece só após seleção do cliente)
     if cliente:
@@ -55,7 +60,6 @@ def main():
         st.info("Selecione um cliente para começar.")
         return
 
-    st.title(f"{opcao} - {cliente}")
     if opcao == 'Upload de Dados':
         pagina_upload(cliente)
     else:
