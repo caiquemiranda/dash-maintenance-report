@@ -4,11 +4,11 @@ import os
 def get_db_connection():
     """Estabelece conexão com o banco de dados SQLite"""
     # Verificar se o diretório data existe
-    if not os.path.exists('building/visual_geral/db'):
-        os.makedirs('building/visual_geral/db')
+    if not os.path.exists('building/visual_geral/data/db'):
+        os.makedirs('building/visual_geral/data/db')
     
     # Caminho do banco de dados
-    db_path = 'building/visual_geral/db/dashboard.db'
+    db_path = 'building/visual_geral/data/db/dashboard.db'
     
     # Conectar ao banco de dados
     conn = sqlite3.connect(db_path)
@@ -37,6 +37,7 @@ def init_db():
         type TEXT,
         action TEXT,
         description TEXT,
+        cliente TEXT NOT NULL,
         cliente_id INTEGER,
         FOREIGN KEY (cliente_id) REFERENCES clientes (id)
     )
@@ -83,13 +84,14 @@ def salvar_pontos(cliente, dados_df):
     # Inserir novos dados
     for _, row in dados_df.iterrows():
         c.execute('''
-        INSERT INTO lista_de_pontos (id_disp, type, action, description, cliente_id)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO lista_de_pontos (id_disp, type, action, description, cliente, cliente_id)
+        VALUES (?, ?, ?, ?, ?, ?)
         ''', (
             row['id_disp'],
             row['type'],
             row['action'],
             row['description'],
+            cliente,
             cliente_id
         ))
     
@@ -110,7 +112,7 @@ def buscar_pontos(cliente):
     
     # Buscar dados
     c.execute('''
-    SELECT id_disp, type, action, description
+    SELECT id_disp, type, action, description, cliente
     FROM lista_de_pontos
     WHERE cliente_id = ?
     ''', (cliente_id,))
