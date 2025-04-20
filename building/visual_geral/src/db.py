@@ -1,5 +1,6 @@
 import sqlite3
 import os
+from datetime import datetime
 
 def get_db_connection():
     """Estabelece conexão com o banco de dados SQLite"""
@@ -121,6 +122,27 @@ def init_db():
             cliente TEXT NOT NULL,
             cliente_id INTEGER,
             mes_manutencao INTEGER,
+            FOREIGN KEY (cliente_id) REFERENCES clientes (id)
+        )
+        ''')
+    
+    # Verificar se a tabela testes_dispositivos já existe
+    c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='testes_dispositivos'")
+    tabela_testes_existe = c.fetchone()
+    
+    if not tabela_testes_existe:
+        # Criar tabela para armazenar os testes de dispositivos
+        c.execute('''
+        CREATE TABLE IF NOT EXISTS testes_dispositivos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id_disp TEXT NOT NULL,
+            cliente TEXT NOT NULL,
+            cliente_id INTEGER,
+            mes INTEGER NOT NULL,      -- Mês do teste (1-12)
+            ano INTEGER NOT NULL,      -- Ano do teste (ex: 2023)
+            status TEXT NOT NULL,      -- 'ok' ou 'nao_ok'
+            observacao TEXT,           -- Observações adicionais
+            data_teste TEXT,           -- Data em que o teste foi realizado
             FOREIGN KEY (cliente_id) REFERENCES clientes (id)
         )
         ''')
@@ -392,4 +414,128 @@ def verificar_estado_plano(cliente):
         "colunas": colunas,
         "total_registros": total_registros,
         "distribuicao_por_mes": distribuicao
-    } 
+    }
+
+def salvar_teste_dispositivos(cliente, mes, ano, df_resultados):
+    """
+    Salva os resultados dos testes de dispositivos no banco de dados.
+    
+    Parâmetros:
+    - cliente: Nome do cliente
+    - mes: Mês do teste (número)
+    - ano: Ano do teste
+    - df_resultados: DataFrame com os resultados [id_disp, status, observacao]
+    
+    Retorna:
+    - True se os dados foram salvos com sucesso
+    - False em caso de erro
+    """
+    try:
+        # Garantir que a tabela existe
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Verificar se a tabela existe e criar se não existir
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS testes_dispositivos (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                cliente TEXT,
+                mes INTEGER,
+                ano INTEGER,
+                id_disp TEXT,
+                status TEXT,
+                observacao TEXT,
+                data_teste TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
+        # Para cada dispositivo no DataFrame
+        for _, row in df_resultados.iterrows():
+            id_disp = row['id_disp']
+            status = row['status']
+            observacao = row['observacao']
+            
+            # Verificar se já existe um registro para este dispositivo/cliente/mês/ano
+            cursor.execute('''
+                SELECT id FROM testes_dispositivos 
+                WHERE cliente = ? AND mes = ? AND ano = ? AND id_disp = ?
+            ''', (cliente, mes, ano, id_disp))
+            
+            resultado = cursor.fetchone()
+            
+            if resultado:
+                # Atualizar registro existente
+                cursor.execute('''
+                    UPDATE testes_dispositivos
+                    SET status = ?, observacao = ?, data_teste = CURRENT_TIMESTAMP
+                    WHERE cliente = ? AND mes = ? AND ano = ? AND id_disp = ?
+                ''', (status, observacao, cliente, mes, ano, id_disp))
+            else:
+                # Inserir novo registro
+                cursor.execute('''
+                    INSERT INTO testes_dispositivos
+                    (cliente, mes, ano, id_disp, status, observacao)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                ''', (cliente, mes, ano, id_disp, status, observacao))
+        
+        conn.commit()
+        conn.close()
+        return True
+        
+    except Exception as e:
+        print(f"Erro ao salvar testes de dispositivos: {str(e)}")
+        return False
+
+def buscar_testes_dispositivos(cliente, mes, ano):
+    """
+    Busca os resultados de testes de dispositivos para um cliente/mês/ano.
+    
+    Parâmetros:
+    - cliente: Nome do cliente
+    - mes: Mês do teste (número)
+    - ano: Ano do teste
+    
+    Retorna:
+    - Lista de dicionários com os testes realizados [id_disp, status, observacao]
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Verificar se a tabela existe
+        cursor.execute('''
+            SELECT name FROM sqlite_master 
+            WHERE type='table' AND name='testes_dispositivos'
+        ''')
+        
+        if not cursor.fetchone():
+            # Se a tabela não existe, retorna lista vazia
+            conn.close()
+            return []
+        
+        # Buscar os testes para o cliente/mês/ano
+        cursor.execute('''
+            SELECT id_disp, status, observacao, data_teste
+            FROM testes_dispositivos
+            WHERE cliente = ? AND mes = ? AND ano = ?
+        ''', (cliente, mes, ano))
+        
+        resultados = cursor.fetchall()
+        conn.close()
+        
+        # Converter para lista de dicionários
+        testes = []
+        for resultado in resultados:
+            teste = {
+                'id_disp': resultado[0],
+                'status': resultado[1],
+                'observacao': resultado[2],
+                'data_teste': resultado[3]
+            }
+            testes.append(teste)
+        
+        return testes
+    
+    except Exception as e:
+        print(f"Erro ao buscar testes de dispositivos: {str(e)}")
+        return [] 
