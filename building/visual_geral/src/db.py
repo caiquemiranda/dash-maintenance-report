@@ -67,18 +67,63 @@ def init_db():
         )
         ''')
     
-    # Criar tabela de plano de manutenção se não existir
-    c.execute('''
-    CREATE TABLE IF NOT EXISTS plano_manutencao (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        id_disp TEXT NOT NULL,
-        cliente TEXT NOT NULL,
-        cliente_id INTEGER,
-        periodicidade INTEGER,  -- 1=mensal, 3=trimestral, 6=semestral, 12=anual
-        mes_inicio INTEGER,     -- mês de início da manutenção (1-12)
-        FOREIGN KEY (cliente_id) REFERENCES clientes (id)
-    )
-    ''')
+    # Verificar se a tabela plano_manutencao já existe
+    c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='plano_manutencao'")
+    tabela_plano_existe = c.fetchone()
+    
+    if tabela_plano_existe:
+        # Verificar se a coluna 'mes_manutencao' existe
+        c.execute("PRAGMA table_info(plano_manutencao)")
+        colunas = c.fetchall()
+        tem_coluna_mes_manutencao = any(col['name'] == 'mes_manutencao' for col in colunas)
+        
+        if not tem_coluna_mes_manutencao:
+            # A tabela existe mas não tem a nova estrutura, precisamos recriar
+            try:
+                # Salvar os dados antigos
+                c.execute("SELECT id_disp, cliente, cliente_id, periodicidade FROM plano_manutencao")
+                dados_antigos = c.fetchall()
+                
+                # Remover tabela antiga
+                c.execute("DROP TABLE plano_manutencao")
+                
+                # Criar nova tabela
+                c.execute('''
+                CREATE TABLE plano_manutencao (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    id_disp TEXT NOT NULL,
+                    cliente TEXT NOT NULL,
+                    cliente_id INTEGER,
+                    mes_manutencao INTEGER,
+                    FOREIGN KEY (cliente_id) REFERENCES clientes (id)
+                )
+                ''')
+                
+                # Migrar dados antigos calculando o mês pela periodicidade
+                # Para simplificar, colocamos todos os dispositivos no mês 1 (janeiro)
+                if dados_antigos:
+                    for dado in dados_antigos:
+                        c.execute('''
+                        INSERT INTO plano_manutencao (id_disp, cliente, cliente_id, mes_manutencao)
+                        VALUES (?, ?, ?, 1)
+                        ''', (dado['id_disp'], dado['cliente'], dado['cliente_id']))
+                
+                conn.commit()
+                print("Tabela 'plano_manutencao' recriada com a nova estrutura")
+            except Exception as e:
+                print(f"Erro ao recriar tabela plano_manutencao: {str(e)}")
+    else:
+        # Criar tabela de plano de manutenção se não existir
+        c.execute('''
+        CREATE TABLE IF NOT EXISTS plano_manutencao (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id_disp TEXT NOT NULL,
+            cliente TEXT NOT NULL,
+            cliente_id INTEGER,
+            mes_manutencao INTEGER,
+            FOREIGN KEY (cliente_id) REFERENCES clientes (id)
+        )
+        ''')
     
     # Inserir clientes iniciais
     clientes = ['BRD', 'BYR', 'AERO', 'BSC']
@@ -182,7 +227,7 @@ def salvar_plano_manutencao(cliente, plano_df):
     
     Parâmetros:
     cliente (str): Nome do cliente
-    plano_df (DataFrame): DataFrame com as colunas id_disp e periodicidade
+    plano_df (DataFrame): DataFrame com as colunas id_disp e mes_manutencao
     
     Retorna:
     bool: True se salvo com sucesso
@@ -201,19 +246,15 @@ def salvar_plano_manutencao(cliente, plano_df):
     c.execute("DELETE FROM plano_manutencao WHERE cliente_id = ?", (cliente_id,))
     
     # Inserir novos dados
-    import datetime
-    mes_atual = datetime.datetime.now().month
-    
     for _, row in plano_df.iterrows():
         c.execute('''
-        INSERT INTO plano_manutencao (id_disp, cliente, cliente_id, periodicidade, mes_inicio)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO plano_manutencao (id_disp, cliente, cliente_id, mes_manutencao)
+        VALUES (?, ?, ?, ?)
         ''', (
             row['id_disp'],
             cliente,
             cliente_id,
-            row['periodicidade'],
-            mes_atual  # Começa a partir do mês atual
+            row['mes_manutencao']
         ))
     
     conn.commit()
@@ -241,7 +282,7 @@ def buscar_plano_manutencao(cliente):
     
     # Buscar dados
     c.execute('''
-    SELECT id_disp, periodicidade, mes_inicio
+    SELECT id_disp, mes_manutencao
     FROM plano_manutencao
     WHERE cliente_id = ?
     ''', (cliente_id,))
@@ -274,30 +315,14 @@ def buscar_manutencao_mensal(cliente, mes):
     
     # Buscar dispositivos que devem ser testados no mês
     c.execute('''
-    SELECT pm.id_disp, pm.periodicidade, pm.mes_inicio,
+    SELECT pm.id_disp, pm.mes_manutencao,
            lp.type, lp.action, lp.description 
     FROM plano_manutencao pm
     JOIN lista_de_pontos lp ON pm.id_disp = lp.id_disp AND pm.cliente_id = lp.cliente_id
-    WHERE pm.cliente_id = ?
-    ''', (cliente_id,))
+    WHERE pm.cliente_id = ? AND pm.mes_manutencao = ?
+    ''', (cliente_id, mes))
     
-    resultados = [dict(row) for row in c.fetchall()]
-    dispositivos_para_testar = []
-    
-    # Para cada dispositivo, verifica se ele deve ser testado no mês especificado
-    for disp in resultados:
-        periodicidade = disp['periodicidade']
-        mes_inicio = disp['mes_inicio']
-        
-        # Meses desde o início
-        meses_desde_inicio = (mes - mes_inicio) % 12
-        
-        # Mensal (periodicidade=1): testar todos os meses
-        # Trimestral (periodicidade=3): testar a cada 3 meses
-        # Semestral (periodicidade=6): testar a cada 6 meses
-        # Anual (periodicidade=12): testar uma vez por ano
-        if meses_desde_inicio % periodicidade == 0:
-            dispositivos_para_testar.append(disp)
+    dispositivos_para_testar = [dict(row) for row in c.fetchall()]
     
     conn.close()
     return dispositivos_para_testar 

@@ -254,110 +254,123 @@ def pagina_plano_manutencao(cliente):
     # Extrair informação de laço
     df['laco'] = df['id_disp'].apply(extrair_laco)
     
+    # Definir meses
+    meses = [
+        "Janeiro", "Fevereiro", "Março", "Abril", 
+        "Maio", "Junho", "Julho", "Agosto", 
+        "Setembro", "Outubro", "Novembro", "Dezembro"
+    ]
+    
     # Verificar se já existe um plano de manutenção
     plano_existente = db.buscar_plano_manutencao(cliente)
     
+    # Se existe, mesclar com os dados
     if plano_existente:
         # Converter para DataFrame
         df_plano = pd.DataFrame(plano_existente)
         # Mesclar com os dados dos dispositivos
         if not df_plano.empty:
-            df = pd.merge(df, df_plano[['id_disp', 'periodicidade']], on='id_disp', how='left')
-            df['periodicidade'] = df['periodicidade'].fillna(12)  # Padrão: anual
-    else:
-        # Não existe plano, iniciar com todos como anuais
-        df['periodicidade'] = 12
-    
-    # Adicionar botão para distribuir automaticamente
-    if st.button("Distribuir Dispositivos Automaticamente"):
-        # Dividir por periodicidade
-        total_dispositivos = len(df)
+            df = pd.merge(df, df_plano[['id_disp', 'mes_manutencao']], on='id_disp', how='left')
         
-        # Cálculo para dividir aproximadamente
-        qtd_mensal = total_dispositivos // 12
-        qtd_trimestral = total_dispositivos // 4
-        qtd_semestral = total_dispositivos // 2
-        qtd_anual = total_dispositivos - qtd_mensal - qtd_trimestral - qtd_semestral
+    # Se não existe ou se faltam dispositivos, inicializamos com mês 0 (não definido)
+    if 'mes_manutencao' not in df.columns or df['mes_manutencao'].isnull().any():
+        if 'mes_manutencao' not in df.columns:
+            df['mes_manutencao'] = 0  # 0 significa não atribuído
+        else:
+            df['mes_manutencao'] = df['mes_manutencao'].fillna(0)
+    
+    # Escolher estratégia de distribuição
+    st.subheader("Definir Plano de Manutenção")
+    
+    # Explicação
+    st.markdown("""
+    Escolha como você deseja distribuir os dispositivos ao longo do ano:
+    - **Mensal**: Divide os dispositivos igualmente entre os 12 meses (visitas mensais)
+    - **Trimestral**: Divide os dispositivos em 4 grupos (visitas a cada 3 meses)
+    - **Semestral**: Divide os dispositivos em 2 grupos (visitas a cada 6 meses)
+    - **Anual**: Todos os dispositivos serão testados em janeiro (uma visita por ano)
+    """)
+    
+    # Selecionar estratégia
+    estrategia = st.radio(
+        "Selecione a estratégia de distribuição:",
+        ["Mensal", "Trimestral", "Semestral", "Anual"]
+    )
+    
+    # Botão para aplicar distribuição
+    if st.button(f"Distribuir dispositivos ({estrategia})"):
+        # Determinar meses de acordo com a estratégia
+        if estrategia == "Mensal":
+            meses_disponiveis = list(range(1, 13))  # 1 a 12
+        elif estrategia == "Trimestral":
+            meses_disponiveis = [1, 4, 7, 10]  # Jan, Abr, Jul, Out
+        elif estrategia == "Semestral":
+            meses_disponiveis = [1, 7]  # Jan, Jul
+        else:  # Anual
+            meses_disponiveis = [1]  # Janeiro
+        
+        # Calcular quantidade de dispositivos por mês
+        total_dispositivos = len(df)
+        qtd_por_mes = {}
+        
+        # Distribuir igualmente
+        dispositivos_por_mes = total_dispositivos // len(meses_disponiveis)
+        extras = total_dispositivos % len(meses_disponiveis)
+        
+        for i, mes in enumerate(meses_disponiveis):
+            qtd_por_mes[mes] = dispositivos_por_mes
+            if i < extras:
+                qtd_por_mes[mes] += 1
+        
+        # Ordenar dispositivos por laço para manter dispositivos do mesmo laço juntos
+        df = df.sort_values(['laco', 'id_disp'])
         
         # Distribuir
-        df = df.sort_values('id_disp')
-        df['periodicidade'] = 12  # Resetar todos para anual
+        indice_atual = 0
+        for mes, quantidade in qtd_por_mes.items():
+            # Atribuir mês a cada dispositivo nesse grupo
+            for i in range(quantidade):
+                if indice_atual < len(df):
+                    df.iloc[indice_atual, df.columns.get_loc('mes_manutencao')] = mes
+                    indice_atual += 1
         
-        # Aplicar distribuição
-        if qtd_mensal > 0:
-            df.iloc[:qtd_mensal, df.columns.get_loc('periodicidade')] = 1
-        if qtd_trimestral > 0:
-            df.iloc[qtd_mensal:qtd_mensal+qtd_trimestral, df.columns.get_loc('periodicidade')] = 3
-        if qtd_semestral > 0:
-            df.iloc[qtd_mensal+qtd_trimestral:qtd_mensal+qtd_trimestral+qtd_semestral, df.columns.get_loc('periodicidade')] = 6
+        # Mensagem de sucesso
+        st.success(f"Dispositivos distribuídos conforme estratégia {estrategia}!")
+    
+    # Exibir dispositivos por mês
+    st.subheader("Dispositivos por Mês")
+    
+    # Criar abas para cada mês
+    if 'mes_manutencao' in df.columns:
+        tabs = st.tabs(meses)
         
-        st.success(f"Dispositivos distribuídos: {qtd_mensal} mensais, {qtd_trimestral} trimestrais, {qtd_semestral} semestrais, {qtd_anual} anuais.")
-     
-    # Separar por periodicidade
-    df_mensal = df[df['periodicidade'] == 1]
-    df_trimestral = df[df['periodicidade'] == 3]
-    df_semestral = df[df['periodicidade'] == 6]
-    df_anual = df[df['periodicidade'] == 12]
-    
-    # Exibir em abas
-    tab1, tab2, tab3, tab4 = st.tabs(["Mensal (1 mês)", "Trimestral (3 meses)", "Semestral (6 meses)", "Anual (12 meses)"])
-    
-    with tab1:
-        st.write(f"### Dispositivos com manutenção mensal - {len(df_mensal)} dispositivos")
-        if not df_mensal.empty:
-            st.dataframe(df_mensal[['id_disp', 'type', 'action', 'description', 'laco', 'periodicidade']])
-            
-            # Gráfico distribuição por laço
-            st.subheader("Dispositivos por Laço")
-            contagem_laco = df_mensal['laco'].value_counts()
-            st.bar_chart(contagem_laco)
-        else:
-            st.info("Não há dispositivos com manutenção mensal.")
-    
-    with tab2:
-        st.write(f"### Dispositivos com manutenção trimestral - {len(df_trimestral)} dispositivos")
-        if not df_trimestral.empty:
-            st.dataframe(df_trimestral[['id_disp', 'type', 'action', 'description', 'laco', 'periodicidade']])
-            
-            # Gráfico distribuição por laço
-            st.subheader("Dispositivos por Laço")
-            contagem_laco = df_trimestral['laco'].value_counts()
-            st.bar_chart(contagem_laco)
-        else:
-            st.info("Não há dispositivos com manutenção trimestral.")
-    
-    with tab3:
-        st.write(f"### Dispositivos com manutenção semestral - {len(df_semestral)} dispositivos")
-        if not df_semestral.empty:
-            st.dataframe(df_semestral[['id_disp', 'type', 'action', 'description', 'laco', 'periodicidade']])
-            
-            # Gráfico distribuição por laço
-            st.subheader("Dispositivos por Laço")
-            contagem_laco = df_semestral['laco'].value_counts()
-            st.bar_chart(contagem_laco)
-        else:
-            st.info("Não há dispositivos com manutenção semestral.")
-    
-    with tab4:
-        st.write(f"### Dispositivos com manutenção anual - {len(df_anual)} dispositivos")
-        if not df_anual.empty:
-            st.dataframe(df_anual[['id_disp', 'type', 'action', 'description', 'laco', 'periodicidade']])
-            
-            # Gráfico distribuição por laço
-            st.subheader("Dispositivos por Laço")
-            contagem_laco = df_anual['laco'].value_counts()
-            st.bar_chart(contagem_laco)
-        else:
-            st.info("Não há dispositivos com manutenção anual.")
-            
+        for i, mes_nome in enumerate(meses):
+            mes_numero = i + 1
+            with tabs[i]:
+                # Filtrar dispositivos para este mês
+                df_mes = df[df['mes_manutencao'] == mes_numero]
+                
+                if not df_mes.empty:
+                    st.markdown(f"### {len(df_mes)} dispositivos para testar em {mes_nome}")
+                    
+                    # Mostrar dispositivos
+                    st.dataframe(df_mes[['id_disp', 'type', 'action', 'description', 'laco']])
+                    
+                    # Mostrar distribuição por laço
+                    st.subheader("Dispositivos por Laço")
+                    contagem_laco = df_mes['laco'].value_counts()
+                    st.bar_chart(contagem_laco)
+                else:
+                    st.info(f"Nenhum dispositivo programado para {mes_nome}")
+             
     # Opções de configuração manual
     st.markdown("---")
-    st.subheader("Configurar Plano de Manutenção")
+    st.subheader("Ajustes Manuais")
     
     col1, col2 = st.columns(2)
     
     with col1:
-        st.markdown("### Ajustar periodicidade")
+        st.markdown("### Selecionar dispositivos")
         
         # Filtro para seleção de dispositivos
         lacos_unicos = sorted(df['laco'].unique())
@@ -379,67 +392,62 @@ def pagina_plano_manutencao(cliente):
         # Exibir quantidade de dispositivos selecionados
         st.info(f"Selecionados: {len(df_ajuste)} dispositivos")
         
-        # Opção para atribuir periodicidade
-        opcoes_periodicidade = [
-            ("Mensal (1 mês)", 1),
-            ("Trimestral (3 meses)", 3),
-            ("Semestral (6 meses)", 6),
-            ("Anual (12 meses)", 12)
-        ]
-        nova_periodicidade_idx = st.selectbox(
-            "Definir periodicidade:", 
-            range(len(opcoes_periodicidade)),
-            format_func=lambda i: opcoes_periodicidade[i][0]
-        )
-        nova_periodicidade = opcoes_periodicidade[nova_periodicidade_idx]
+        # Selecionar mês para atribuir
+        mes_para_atribuir = st.selectbox(
+            "Mês para manutenção:", 
+            range(len(meses)),
+            format_func=lambda i: meses[i]
+        ) + 1  # Ajuste para 1-12
         
         # Botão para aplicar
-        if st.button("Aplicar periodicidade aos dispositivos selecionados"):
+        if st.button("Atribuir mês aos dispositivos selecionados"):
             for idx in df_ajuste.index:
-                df.at[idx, 'periodicidade'] = nova_periodicidade[1]
-                
-            # Atualizar dataframes separados
-            df_mensal = df[df['periodicidade'] == 1]
-            df_trimestral = df[df['periodicidade'] == 3]
-            df_semestral = df[df['periodicidade'] == 6]
-            df_anual = df[df['periodicidade'] == 12]
-                
-            st.success(f"Periodicidade {nova_periodicidade[0]} aplicada a {len(df_ajuste)} dispositivos! Você pode verificar nas abas acima ou salvar o plano.")
+                df.at[idx, 'mes_manutencao'] = mes_para_atribuir
+                 
+            st.success(f"{len(df_ajuste)} dispositivos atribuídos para manutenção em {meses[mes_para_atribuir-1]}! Você pode verificar nas abas acima.")
     
     with col2:
-        st.markdown("### Distribuição atual")
+        st.markdown("### Visão geral do plano")
         
-        # Criar dicionário para contagem de periodicidades
-        contagem_periodicidade = {
-            1: len(df_mensal),    # Mensal
-            3: len(df_trimestral), # Trimestral
-            6: len(df_semestral),  # Semestral
-            12: len(df_anual)      # Anual
-        }
+        # Calcular distribuição por mês
+        contagem_por_mes = df['mes_manutencao'].value_counts().sort_index()
+        contagem_por_mes = contagem_por_mes[contagem_por_mes.index != 0]  # Excluir não atribuídos
+        if not contagem_por_mes.empty:
+            # Criar DataFrame para o gráfico
+            meses_df = pd.DataFrame({
+                'Mês': [meses[i-1] for i in contagem_por_mes.index],
+                'Quantidade': contagem_por_mes.values
+            })
+            # Exibir gráfico
+            st.bar_chart(meses_df.set_index('Mês'))
+            
+            # Mostrar quantos dispositivos não têm mês atribuído
+            nao_atribuidos = len(df[df['mes_manutencao'] == 0])
+            if nao_atribuidos > 0:
+                st.warning(f"{nao_atribuidos} dispositivos ainda não têm mês de manutenção atribuído.")
+        else:
+            st.info("Nenhum dispositivo tem mês de manutenção atribuído ainda.")
         
-        # Criar DataFrame com as contagens (garantindo que todos os valores estejam presentes)
-        periodicidade_df = pd.DataFrame({
-            'Periodicidade': ['Mensal', 'Trimestral', 'Semestral', 'Anual'],
-            'Quantidade': [contagem_periodicidade[1], contagem_periodicidade[3], 
-                          contagem_periodicidade[6], contagem_periodicidade[12]]
-        })
-        
-        # Exibir como gráfico de barras
-        st.bar_chart(periodicidade_df.set_index('Periodicidade'))
-        
-        # Mostrar quantidade de cada periodicidade e porcentagem
-        st.markdown(f"**Mensal:** {len(df_mensal)} dispositivos ({len(df_mensal)/len(df)*100:.1f}%)")
-        st.markdown(f"**Trimestral:** {len(df_trimestral)} dispositivos ({len(df_trimestral)/len(df)*100:.1f}%)")
-        st.markdown(f"**Semestral:** {len(df_semestral)} dispositivos ({len(df_semestral)/len(df)*100:.1f}%)")
-        st.markdown(f"**Anual:** {len(df_anual)} dispositivos ({len(df_anual)/len(df)*100:.1f}%)")
+        # Resumo da distribuição
+        st.markdown("### Resumo da distribuição:")
+        for i, mes_nome in enumerate(meses):
+            mes_numero = i + 1
+            qtd = len(df[df['mes_manutencao'] == mes_numero])
+            if qtd > 0:
+                st.markdown(f"**{mes_nome}:** {qtd} dispositivos")
         
         # Salvar o plano de manutenção no banco
         if st.button("Salvar Plano de Manutenção"):
             # Preparar DataFrame para salvar
-            plano_df = df[['id_disp', 'periodicidade']]
+            # Filtrar dispositivos com mês atribuído
+            df_para_salvar = df[df['mes_manutencao'] > 0][['id_disp', 'mes_manutencao']]
+            
+            if df_para_salvar.empty:
+                st.error("Nenhum dispositivo tem mês de manutenção atribuído. Distribua os dispositivos primeiro.")
+                return
             
             # Salvar no banco
-            resultado = db.salvar_plano_manutencao(cliente, plano_df)
+            resultado = db.salvar_plano_manutencao(cliente, df_para_salvar)
             
             if resultado:
                 st.success("Plano de manutenção salvo com sucesso!")
@@ -453,7 +461,7 @@ def pagina_manutencao_mensal(cliente):
     plano_existente = db.buscar_plano_manutencao(cliente)
     
     if not plano_existente:
-        st.warning(f"Nenhum plano de manutenção definido para {cliente}. Vá para a página 'Plano de Manutenção' para configurar.")
+        st.warning(f"Nenhum plano de manutenção definido para {cliente}. Vá para a página 'Plano de Manutenção' e defina um mês para cada dispositivo.")
         return
     
     # Seletor de mês atual
