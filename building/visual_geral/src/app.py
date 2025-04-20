@@ -248,64 +248,98 @@ def pagina_plano_manutencao(cliente):
     # Mostrar dados em DataFrame
     df = pd.DataFrame(dados)
     
-    # Filtrar excluindo dispositivos com action="ISO"
-    df = df[df['action'] != 'ISO']
+    # Filtrar excluindo dispositivos com action="ISO" e type="UNUSED"
+    df = df[(df['action'] != 'ISO') & (df['type'] != 'UNUSED')]
     
     # Extrair informação de laço
     df['laco'] = df['id_disp'].apply(extrair_laco)
     
-    # Determinar o período de manutenção baseado no type
-    def determinar_periodo(row):
-        tipo = row['type'].upper() if isinstance(row['type'], str) else ""
+    # Verificar se já existe um plano de manutenção
+    plano_existente = db.buscar_plano_manutencao(cliente)
+    
+    if plano_existente:
+        # Converter para DataFrame
+        df_plano = pd.DataFrame(plano_existente)
+        # Mesclar com os dados dos dispositivos
+        if not df_plano.empty:
+            df = pd.merge(df, df_plano[['id_disp', 'periodicidade']], on='id_disp', how='left')
+            df['periodicidade'] = df['periodicidade'].fillna(12)  # Padrão: anual
+    else:
+        # Não existe plano, iniciar com todos como anuais
+        df['periodicidade'] = 12
+    
+    # Dividir por periodicidade
+    total_dispositivos = len(df)
+    
+    # Determinar quantos dispositivos para cada periodicidade
+    # Se não houver configuração prévia, dividimos igualmente
+    if 'periodicidade' not in df.columns:
+        # Cálculo para dividir aproximadamente
+        qtd_mensal = total_dispositivos // 12
+        qtd_trimestral = total_dispositivos // 4
+        qtd_semestral = total_dispositivos // 2
+        qtd_anual = total_dispositivos - qtd_mensal - qtd_trimestral - qtd_semestral
         
-        # Dispositivos que precisam de manutenção bimestral (a cada 2 meses)
-        if tipo in ['MBZAM', 'IAM', 'ADRPUL']:
-            return 2
-        # Dispositivos que precisam de manutenção quadrimestral (a cada 4 meses)
-        elif tipo in ['PHOTO', 'IDNETISO']:
-            return 4
-        # Outros dispositivos com manutenção anual
-        else:
-            return 12
+        # Distribuir
+        df = df.sort_values('id_disp')
+        df['periodicidade'] = 12  # Padrão: anual
+        
+        if qtd_mensal > 0:
+            df.iloc[:qtd_mensal, df.columns.get_loc('periodicidade')] = 1
+        if qtd_trimestral > 0:
+            df.iloc[qtd_mensal:qtd_mensal+qtd_trimestral, df.columns.get_loc('periodicidade')] = 3
+        if qtd_semestral > 0:
+            df.iloc[qtd_mensal+qtd_trimestral:qtd_mensal+qtd_trimestral+qtd_semestral, df.columns.get_loc('periodicidade')] = 6
     
-    df['periodo_manutencao'] = df.apply(determinar_periodo, axis=1)
-    
-    # Dividir por períodos
-    df_bimestral = df[df['periodo_manutencao'] == 2]
-    df_quadrimestral = df[df['periodo_manutencao'] == 4]
-    df_anual = df[df['periodo_manutencao'] == 12]
+    # Separar por periodicidade
+    df_mensal = df[df['periodicidade'] == 1]
+    df_trimestral = df[df['periodicidade'] == 3]
+    df_semestral = df[df['periodicidade'] == 6]
+    df_anual = df[df['periodicidade'] == 12]
     
     # Exibir em abas
-    tab1, tab2, tab3 = st.tabs(["Bimestral (2 meses)", "Quadrimestral (4 meses)", "Anual (12 meses)"])
+    tab1, tab2, tab3, tab4 = st.tabs(["Mensal (1 mês)", "Trimestral (3 meses)", "Semestral (6 meses)", "Anual (12 meses)"])
     
     with tab1:
-        st.write(f"### Dispositivos com manutenção a cada 2 meses - {len(df_bimestral)} dispositivos")
-        if not df_bimestral.empty:
-            st.dataframe(df_bimestral[['id_disp', 'type', 'action', 'description', 'laco']])
+        st.write(f"### Dispositivos com manutenção mensal - {len(df_mensal)} dispositivos")
+        if not df_mensal.empty:
+            st.dataframe(df_mensal[['id_disp', 'type', 'action', 'description', 'laco', 'periodicidade']])
             
             # Gráfico distribuição por laço
             st.subheader("Dispositivos por Laço")
-            contagem_laco = df_bimestral['laco'].value_counts()
+            contagem_laco = df_mensal['laco'].value_counts()
             st.bar_chart(contagem_laco)
         else:
-            st.info("Não há dispositivos com manutenção bimestral.")
+            st.info("Não há dispositivos com manutenção mensal.")
     
     with tab2:
-        st.write(f"### Dispositivos com manutenção a cada 4 meses - {len(df_quadrimestral)} dispositivos")
-        if not df_quadrimestral.empty:
-            st.dataframe(df_quadrimestral[['id_disp', 'type', 'action', 'description', 'laco']])
+        st.write(f"### Dispositivos com manutenção trimestral - {len(df_trimestral)} dispositivos")
+        if not df_trimestral.empty:
+            st.dataframe(df_trimestral[['id_disp', 'type', 'action', 'description', 'laco', 'periodicidade']])
             
             # Gráfico distribuição por laço
             st.subheader("Dispositivos por Laço")
-            contagem_laco = df_quadrimestral['laco'].value_counts()
+            contagem_laco = df_trimestral['laco'].value_counts()
             st.bar_chart(contagem_laco)
         else:
-            st.info("Não há dispositivos com manutenção quadrimestral.")
+            st.info("Não há dispositivos com manutenção trimestral.")
     
     with tab3:
+        st.write(f"### Dispositivos com manutenção semestral - {len(df_semestral)} dispositivos")
+        if not df_semestral.empty:
+            st.dataframe(df_semestral[['id_disp', 'type', 'action', 'description', 'laco', 'periodicidade']])
+            
+            # Gráfico distribuição por laço
+            st.subheader("Dispositivos por Laço")
+            contagem_laco = df_semestral['laco'].value_counts()
+            st.bar_chart(contagem_laco)
+        else:
+            st.info("Não há dispositivos com manutenção semestral.")
+    
+    with tab4:
         st.write(f"### Dispositivos com manutenção anual - {len(df_anual)} dispositivos")
         if not df_anual.empty:
-            st.dataframe(df_anual[['id_disp', 'type', 'action', 'description', 'laco']])
+            st.dataframe(df_anual[['id_disp', 'type', 'action', 'description', 'laco', 'periodicidade']])
             
             # Gráfico distribuição por laço
             st.subheader("Dispositivos por Laço")
@@ -313,41 +347,86 @@ def pagina_plano_manutencao(cliente):
             st.bar_chart(contagem_laco)
         else:
             st.info("Não há dispositivos com manutenção anual.")
+            
+    # Opções de configuração manual
+    st.markdown("---")
+    st.subheader("Configurar Plano de Manutenção")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("### Ajustar periodicidade")
+        
+        # Filtro para seleção de dispositivos
+        lacos_unicos = sorted(df['laco'].unique())
+        laco_selecionado = st.multiselect("Selecionar por Laço:", lacos_unicos)
+        
+        # Filtrar apenas os dispositivos do laço selecionado
+        df_ajuste = df.copy()
+        if laco_selecionado:
+            df_ajuste = df_ajuste[df_ajuste['laco'].isin(laco_selecionado)]
+        
+        # Seleção de tipo de dispositivo
+        tipos_unicos = sorted(df_ajuste['type'].unique())
+        tipo_selecionado = st.multiselect("Selecionar por Tipo:", tipos_unicos)
+        
+        # Filtrar por tipo selecionado
+        if tipo_selecionado:
+            df_ajuste = df_ajuste[df_ajuste['type'].isin(tipo_selecionado)]
+        
+        # Exibir quantidade de dispositivos selecionados
+        st.info(f"Selecionados: {len(df_ajuste)} dispositivos")
+        
+        # Opção para atribuir periodicidade
+        nova_periodicidade = st.selectbox("Definir periodicidade:", [
+            ("Mensal", 1),
+            ("Trimestral", 3),
+            ("Semestral", 6),
+            ("Anual", 12)
+        ], format_func=lambda x: x[0])
+        
+        # Botão para aplicar
+        if st.button("Aplicar periodicidade"):
+            for idx in df_ajuste.index:
+                df.at[idx, 'periodicidade'] = nova_periodicidade[1]
+            st.success(f"Periodicidade {nova_periodicidade[0]} aplicada a {len(df_ajuste)} dispositivos!")
+    
+    with col2:
+        st.markdown("### Distribuição atual")
+        
+        # Mostrar distribuição atual
+        periodicidade_counts = df['periodicidade'].value_counts().sort_index()
+        periodicidade_counts.index = ['Mensal', 'Trimestral', 'Semestral', 'Anual']
+        st.bar_chart(periodicidade_counts)
+        
+        # Mostrar quantidade de cada periodicidade e porcentagem
+        st.markdown(f"**Mensal:** {len(df_mensal)} dispositivos ({len(df_mensal)/len(df)*100:.1f}%)")
+        st.markdown(f"**Trimestral:** {len(df_trimestral)} dispositivos ({len(df_trimestral)/len(df)*100:.1f}%)")
+        st.markdown(f"**Semestral:** {len(df_semestral)} dispositivos ({len(df_semestral)/len(df)*100:.1f}%)")
+        st.markdown(f"**Anual:** {len(df_anual)} dispositivos ({len(df_anual)/len(df)*100:.1f}%)")
+        
+        # Salvar o plano de manutenção no banco
+        if st.button("Salvar Plano de Manutenção"):
+            # Preparar DataFrame para salvar
+            plano_df = df[['id_disp', 'periodicidade']]
+            
+            # Salvar no banco
+            resultado = db.salvar_plano_manutencao(cliente, plano_df)
+            
+            if resultado:
+                st.success("Plano de manutenção salvo com sucesso!")
+            else:
+                st.error("Erro ao salvar o plano de manutenção.")
 
 def pagina_manutencao_mensal(cliente):
     st.subheader(f"Manutenção Mensal - {cliente}")
     
-    # Buscar dados do banco de dados
-    dados = db.buscar_pontos(cliente)
+    # Verificar se existe um plano de manutenção salvo
+    plano_existente = db.buscar_plano_manutencao(cliente)
     
-    if not dados:
-        st.info(f"Nenhum dispositivo cadastrado para {cliente}. Use a página de Upload para adicionar.")
+    if not plano_existente:
+        st.warning(f"Nenhum plano de manutenção definido para {cliente}. Vá para a página 'Plano de Manutenção' para configurar.")
         return
-    
-    # Mostrar dados em DataFrame
-    df = pd.DataFrame(dados)
-    
-    # Filtrar excluindo dispositivos com action="ISO"
-    df = df[df['action'] != 'ISO']
-    
-    # Extrair informação de laço
-    df['laco'] = df['id_disp'].apply(extrair_laco)
-    
-    # Determinar o período de manutenção baseado no type
-    def determinar_periodo(row):
-        tipo = row['type'].upper() if isinstance(row['type'], str) else ""
-        
-        # Dispositivos que precisam de manutenção bimestral (a cada 2 meses)
-        if tipo in ['MBZAM', 'IAM', 'ADRPUL']:
-            return 2
-        # Dispositivos que precisam de manutenção quadrimestral (a cada 4 meses)
-        elif tipo in ['PHOTO', 'IDNETISO']:
-            return 4
-        # Outros dispositivos com manutenção anual
-        else:
-            return 12
-    
-    df['periodo_manutencao'] = df.apply(determinar_periodo, axis=1)
     
     # Seletor de mês atual
     meses = [
@@ -364,28 +443,16 @@ def pagina_manutencao_mensal(cliente):
     # Converter mês selecionado para número (1-12)
     mes_numero = meses.index(mes_selecionado) + 1
     
-    # Determinar quais dispositivos devem ser testados neste mês
-    def testar_no_mes(row, mes):
-        periodo = row['periodo_manutencao']
-        
-        # Se for bimestral (2), testa nos meses ímpares ou pares
-        if periodo == 2:
-            return mes % 2 == 1  # meses ímpares: 1,3,5,7,9,11
-        
-        # Se for quadrimestral (4), testa nos meses 1, 5, 9
-        elif periodo == 4:
-            return mes in [1, 5, 9]
-        
-        # Se for anual (12), testa no mês 1 (Janeiro)
-        elif periodo == 12:
-            return mes == 1
-        
-        return False
+    # Buscar as manutenções do mês
+    manutencoes_do_mes = db.buscar_manutencao_mensal(cliente, mes_numero)
     
-    df['testar_este_mes'] = df.apply(lambda row: testar_no_mes(row, mes_numero), axis=1)
-    
-    # Filtrar apenas dispositivos para testar neste mês
-    df_testar = df[df['testar_este_mes']]
+    # Converter para DataFrame para facilitar operações
+    if manutencoes_do_mes:
+        df_testar = pd.DataFrame(manutencoes_do_mes)
+        # Extrair informação de laço
+        df_testar['laco'] = df_testar['id_disp'].apply(extrair_laco)
+    else:
+        df_testar = pd.DataFrame()
     
     if not df_testar.empty:
         st.success(f"Para o mês de {mes_selecionado}, você precisa testar {len(df_testar)} dispositivos!")
@@ -399,7 +466,7 @@ def pagina_manutencao_mensal(cliente):
             df_testar = df_testar[df_testar['laco'].isin(laco_selecionado)]
         
         # Exibir tabela
-        st.dataframe(df_testar[['id_disp', 'type', 'action', 'description', 'laco', 'periodo_manutencao']])
+        st.dataframe(df_testar[['id_disp', 'type', 'action', 'description', 'laco']])
         
         # Gráfico distribuição por laço
         st.subheader("Dispositivos por Laço")
