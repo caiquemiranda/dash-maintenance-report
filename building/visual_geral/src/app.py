@@ -394,10 +394,23 @@ def pagina_plano_manutencao(cliente):
     with col2:
         st.markdown("### Distribuição atual")
         
-        # Mostrar distribuição atual
-        periodicidade_counts = df['periodicidade'].value_counts().sort_index()
-        periodicidade_counts.index = ['Mensal', 'Trimestral', 'Semestral', 'Anual']
-        st.bar_chart(periodicidade_counts)
+        # Criar dicionário para contagem de periodicidades
+        contagem_periodicidade = {
+            1: len(df_mensal),    # Mensal
+            3: len(df_trimestral), # Trimestral
+            6: len(df_semestral),  # Semestral
+            12: len(df_anual)      # Anual
+        }
+        
+        # Criar DataFrame com as contagens (garantindo que todos os valores estejam presentes)
+        periodicidade_df = pd.DataFrame({
+            'Periodicidade': ['Mensal', 'Trimestral', 'Semestral', 'Anual'],
+            'Quantidade': [contagem_periodicidade[1], contagem_periodicidade[3], 
+                          contagem_periodicidade[6], contagem_periodicidade[12]]
+        })
+        
+        # Exibir como gráfico de barras
+        st.bar_chart(periodicidade_df.set_index('Periodicidade'))
         
         # Mostrar quantidade de cada periodicidade e porcentagem
         st.markdown(f"**Mensal:** {len(df_mensal)} dispositivos ({len(df_mensal)/len(df)*100:.1f}%)")
