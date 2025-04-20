@@ -14,6 +14,7 @@ import dash_bootstrap_components as dbc
 from flask import Flask, request
 import db
 from dash.exceptions import PreventUpdate
+import calendar
 
 # Importar módulos criados
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -511,228 +512,189 @@ def pagina_plano_manutencao(cliente):
                 st.error("Erro ao salvar o plano de manutenção.")
 
 def pagina_manutencao_mensal(cliente):
-    st.subheader(f"Manutenção Mensal - {cliente}")
+    st.title("Relatório de Manutenção Mensal")
     
-    # Debug - verificar estado atual do plano
-    estado_plano = db.verificar_estado_plano(cliente)
-    with st.expander("Informações de depuração do banco de dados"):
-        st.write("Estado do plano no banco de dados:")
-        st.json(estado_plano)
+    # Selecionar cliente, mês e ano
+    cliente = st.selectbox("Cliente", obter_lista_clientes())
+    col1, col2 = st.columns(2)
+    with col1:
+        mes = st.selectbox("Mês", list(range(1, 13)), format_func=lambda x: calendar.month_name[x])
+    with col2:
+        ano = st.selectbox("Ano", list(range(datetime.now().year - 2, datetime.now().year + 1)))
     
-    # Usando método compatível com todas versões do Streamlit
-    if 'plano_salvo' in st.session_state and st.session_state['plano_salvo']:
-        st.session_state['plano_salvo'] = False
-        try:
-            # Versões mais recentes
-            st.rerun()
-        except AttributeError:
-            # Versões mais antigas - não tenta recarregar, apenas avisa
-            st.info("Para ver as alterações mais recentes, recarregue a página.")
-    
-    # Verificar se existe um plano de manutenção salvo
-    plano_existente = db.buscar_plano_manutencao(cliente)
-    
-    if not plano_existente:
-        st.warning(f"Nenhum plano de manutenção definido para {cliente}. Vá para a página 'Plano de Manutenção' e defina um mês para cada dispositivo.")
+    if not cliente:
+        st.error("Nenhum cliente selecionado")
         return
     
-    # Seletor de mês atual
-    meses = [
-        "Janeiro", "Fevereiro", "Março", "Abril", 
-        "Maio", "Junho", "Julho", "Agosto", 
-        "Setembro", "Outubro", "Novembro", "Dezembro"
-    ]
+    # Obter dados
+    df_disp = obter_dispositivos(cliente)
+    df_dados = obter_dados_dispositivos(cliente, mes, ano)
+    testes_anteriores = buscar_testes_dispositivos(cliente, mes, ano)
     
-    # Obter mês atual como padrão
-    import datetime
-    mes_atual = datetime.datetime.now().month
-    ano_atual = datetime.datetime.now().year
+    # Verificar se há dados
+    if df_dados is None or df_dados.empty:
+        st.warning(f"Não há dados para {calendar.month_name[mes]} de {ano}")
+        return
     
-    # Adicionar campo para seleção de ano (para histórico)
-    ano_selecionado = st.selectbox("Selecione o ano:", range(ano_atual-3, ano_atual+1), index=3)
+    # Verificar dispositivos offline
+    df_offline = df_disp[~df_disp['id'].isin(df_dados['id_disp'].unique())]
     
-    mes_selecionado = st.selectbox("Selecione o mês para verificar os testes:", meses, index=mes_atual-1)
+    # Verificar status de bateria e sinal
+    df_alertas = pd.DataFrame()
+    if not df_dados.empty:
+        # Filtrar apenas as últimas leituras de cada dispositivo
+        df_ultimas = df_dados.sort_values('datahora').groupby('id_disp').last().reset_index()
+        
+        # Verificar bateria baixa
+        df_bat_baixa = df_ultimas[df_ultimas['bateria'] < 15]
+        
+        # Verificar sinal fraco
+        df_sinal_fraco = df_ultimas[df_ultimas['sinal'] < -85]
+        
+        # Consolidar alertas
+        if not df_bat_baixa.empty:
+            df_bat_baixa['tipo_alerta'] = 'Bateria Baixa'
+            df_bat_baixa['valor'] = df_bat_baixa['bateria']
+            df_alertas = pd.concat([df_alertas, df_bat_baixa[['id_disp', 'tipo_alerta', 'valor']]])
+        
+        if not df_sinal_fraco.empty:
+            df_sinal_fraco['tipo_alerta'] = 'Sinal Fraco'
+            df_sinal_fraco['valor'] = df_sinal_fraco['sinal']
+            df_alertas = pd.concat([df_alertas, df_sinal_fraco[['id_disp', 'tipo_alerta', 'valor']]])
     
-    # Converter mês selecionado para número (1-12)
-    mes_numero = meses.index(mes_selecionado) + 1
-    
-    # Buscar as manutenções do mês
-    manutencoes_do_mes = db.buscar_manutencao_mensal(cliente, mes_numero)
-    
-    # Converter para DataFrame para facilitar operações
-    if not manutencoes_do_mes:
-        st.warning(f"Não há dispositivos para testar em {mes_selecionado}. Verifique se o plano de manutenção está configurado corretamente.")
-        df_testar = pd.DataFrame()
-    else:
-        st.success(f"Para o mês de {mes_selecionado}, você precisa testar {len(manutencoes_do_mes)} dispositivos!")
-        df_testar = pd.DataFrame(manutencoes_do_mes)
-        # Extrair informação de laço
-        df_testar['laco'] = df_testar['id_disp'].apply(extrair_laco)
+    # Construir relatório
+    with st.container():
+        st.header(f"Relatório para {cliente} - {calendar.month_name[mes]} de {ano}")
         
-        # Filtro por laço
-        lacos_unicos = sorted(df_testar['laco'].unique())
-        laco_selecionado = st.multiselect("Filtrar por Laço:", lacos_unicos)
+        # Métricas principais
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Total de Dispositivos", len(df_disp))
+        with col2:
+            porcentagem_online = 100 - (len(df_offline) / len(df_disp) * 100) if len(df_disp) > 0 else 0
+            st.metric("Dispositivos Online", f"{porcentagem_online:.1f}%")
+        with col3:
+            total_alertas = len(df_alertas)
+            st.metric("Dispositivos com Problemas", total_alertas)
         
-        # Aplicar filtro
-        if laco_selecionado:
-            df_testar = df_testar[df_testar['laco'].isin(laco_selecionado)]
+        # Mostrar dispositivos offline
+        if not df_offline.empty:
+            st.subheader("Dispositivos Offline")
+            st.dataframe(df_offline[['id', 'descricao']])
         
-        # Exibir tabela
-        st.dataframe(df_testar[['id_disp', 'type', 'action', 'description', 'laco']])
-        
-        # Gráfico distribuição por laço
-        st.subheader("Dispositivos por Laço")
-        contagem_laco = df_testar['laco'].value_counts()
-        st.bar_chart(contagem_laco)
-        
-        # Gráfico distribuição por tipo
-        st.subheader("Dispositivos por Tipo")
-        contagem_tipo = df_testar['type'].value_counts()
-        st.bar_chart(contagem_tipo)
-    
-    # Nova seção: Checklist de Testes
-    if not df_testar.empty:
-        st.markdown("---")
-        st.subheader("Checklist de Testes")
-        st.markdown("Registre o resultado dos testes para cada dispositivo")
-        
-        # Buscar testes já realizados (para preencher as opções)
-        testes_realizados = db.buscar_testes_dispositivos(cliente, mes_numero, ano_selecionado)
-        testes_dict = {}
-        
-        # Converter para dicionário para facilitar acesso
-        if testes_realizados:
-            for teste in testes_realizados:
-                testes_dict[teste['id_disp']] = teste
-            
-            st.info(f"Encontrados {len(testes_realizados)} dispositivos já testados neste mês/ano.")
-        
-        # Criar uma lista para armazenar os resultados
-        resultados_testes = []
-        
-        # Criar colunas para o cabeçalho da tabela
-        col_id, col_desc, col_status, col_obs = st.columns([2, 4, 2, 4])
-        with col_id:
-            st.markdown("**ID Dispositivo**")
-        with col_desc:
-            st.markdown("**Descrição**")
-        with col_status:
-            st.markdown("**Status**")
-        with col_obs:
-            st.markdown("**Observações**")
-        
-        # Para cada dispositivo, criar uma linha de checklist
-        for _, row in df_testar.iterrows():
-            id_disp = row['id_disp']
-            descricao = row['description']
-            
-            # Verificar status anterior (se houver)
-            status_anterior = testes_dict.get(id_disp, {}).get('status', '')
-            observacao_anterior = testes_dict.get(id_disp, {}).get('observacao', '')
-            
-            # Definir valores iniciais baseado no histórico
-            status_index = 0  # Padrão: Não testado
-            if status_anterior == 'ok':
-                status_index = 1
-            elif status_anterior == 'nao_ok':
-                status_index = 2
-            
-            # Criar colunas para cada linha
-            col_id, col_desc, col_status, col_obs = st.columns([2, 4, 2, 4])
-            
-            with col_id:
-                st.text(id_disp)
-            with col_desc:
-                st.text(descricao if descricao else "Sem descrição")
-            with col_status:
-                status = st.selectbox(
-                    "Status", 
-                    ["Não testado", "Teste OK", "Teste NÃO OK"], 
-                    index=status_index,
-                    key=f"status_{id_disp}"
-                )
-            with col_obs:
-                observacao = st.text_input(
-                    "Observações", 
-                    value=observacao_anterior,
-                    key=f"obs_{id_disp}"
-                )
-            
-            # Converter status para formato do banco
-            status_db = ""
-            if status == "Teste OK":
-                status_db = "ok"
-            elif status == "Teste NÃO OK":
-                status_db = "nao_ok"
-            
-            # Adicionar à lista de resultados se foi testado
-            if status_db:
-                resultados_testes.append({
-                    "id_disp": id_disp,
-                    "status": status_db,
-                    "observacao": observacao
-                })
-        
-        # Botão para salvar os resultados
-        if resultados_testes and st.button("Salvar Resultados dos Testes"):
-            # Converter para DataFrame
-            df_resultados = pd.DataFrame(resultados_testes)
-            
-            # Salvar no banco
-            try:
-                resultado = db.salvar_teste_dispositivos(cliente, mes_numero, ano_selecionado, df_resultados)
-                if resultado:
-                    st.success(f"Resultados de {len(resultados_testes)} testes salvos com sucesso!")
-                else:
-                    st.error("Erro ao salvar os resultados dos testes.")
-            except Exception as e:
-                st.error(f"Erro ao salvar: {str(e)}")
+        # Mostrar alertas
+        if not df_alertas.empty:
+            st.warning("Dispositivos com Problemas")
+            for _, alerta in df_alertas.iterrows():
+                id_disp = alerta['id_disp']
+                tipo = alerta['tipo_alerta']
+                valor = alerta['valor']
                 
-            # Resumo dos resultados selecionados
-            if resultados_testes:
-                st.markdown("---")
-                st.subheader("Resumo dos Testes")
+                # Buscar descrição do dispositivo
+                desc = df_disp[df_disp['id'] == id_disp]['descricao'].values[0] if id_disp in df_disp['id'].values else "Desconhecido"
                 
-                # Contagem de status
-                total_ok = sum(1 for r in resultados_testes if r['status'] == 'ok')
-                total_nao_ok = sum(1 for r in resultados_testes if r['status'] == 'nao_ok')
-                
-                # Exibir métricas
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    st.metric("Total de Dispositivos", len(df_testar))
-                with col2:
-                    st.metric("Testes OK", total_ok)
-                with col3:
-                    st.metric("Testes NÃO OK", total_nao_ok)
-                
-                # Gráfico de pizza mostrando proporção de testes
-                if total_ok > 0 or total_nao_ok > 0:
-                    import plotly.express as px
-                    
-                    dados_grafico = {
-                        "Status": ["OK", "NÃO OK", "Não Testado"],
-                        "Quantidade": [
-                            total_ok, 
-                            total_nao_ok, 
-                            len(df_testar) - (total_ok + total_nao_ok)
-                        ]
-                    }
-                    
-                    df_grafico = pd.DataFrame(dados_grafico)
-                    fig = px.pie(df_grafico, values="Quantidade", names="Status",
-                                title=f"Status dos Testes - {mes_selecionado}/{ano_selecionado}",
-                                color_discrete_sequence=["#00FF00", "#FF0000", "#AAAAAA"])
-                    st.plotly_chart(fig)
-                
-                # Lista dos dispositivos com problemas (não OK)
-                if total_nao_ok > 0:
-                    st.markdown("### Dispositivos com Problemas")
-                    for r in resultados_testes:
-                        if r['status'] == 'nao_ok':
-                            st.warning(f"**{r['id_disp']}**: {r['observacao']}")
+                st.write(f"**{id_disp}** ({desc}): {tipo} - Valor: {valor}")
+    
+    # Seção para checklist de testes
+    st.header("Checklist de Testes")
+    st.markdown("Registre abaixo os resultados dos testes para cada dispositivo:")
+    
+    # Criar DataFrame para os resultados dos testes
+    df_testes = pd.DataFrame(df_disp[['id', 'descricao']])
+    df_testes.rename(columns={'id': 'id_disp'}, inplace=True)
+    df_testes['status'] = ''
+    df_testes['observacao'] = ''
+    
+    # Preencher com testes anteriores, se existirem
+    testes_dict = {teste['id_disp']: teste for teste in testes_anteriores}
+    for idx, row in df_testes.iterrows():
+        id_disp = row['id_disp']
+        if id_disp in testes_dict:
+            df_testes.at[idx, 'status'] = testes_dict[id_disp].get('status', '')
+            df_testes.at[idx, 'observacao'] = testes_dict[id_disp].get('observacao', '')
+    
+    # Criar layout da tabela de testes
+    for i, row in df_testes.iterrows():
+        col1, col2, col3, col4 = st.columns([1, 2, 2, 3])
+        with col1:
+            st.text(row['id_disp'])
+        with col2:
+            st.text(row['descricao'])
+        with col3:
+            status_key = f"status_{row['id_disp']}"
+            status_atual = row['status']
+            status_opcoes = ["", "Teste OK", "Teste Não OK"]
+            df_testes.at[i, 'status'] = st.selectbox(
+                "Status",
+                options=status_opcoes,
+                index=status_opcoes.index(status_atual) if status_atual in status_opcoes else 0,
+                key=status_key,
+                label_visibility="collapsed"
+            )
+        with col4:
+            obs_key = f"obs_{row['id_disp']}"
+            df_testes.at[i, 'observacao'] = st.text_input(
+                "Observação",
+                value=row['observacao'],
+                key=obs_key,
+                label_visibility="collapsed"
+            )
+    
+    # Botão para salvar os testes
+    if st.button("Salvar Resultados dos Testes"):
+        # Filtramos apenas os testes com status
+        df_para_salvar = df_testes[df_testes['status'] != ''].copy()
+        
+        if df_para_salvar.empty:
+            st.warning("Nenhum resultado de teste para salvar.")
         else:
-            st.info("Nenhum dispositivo foi testado ainda.")
+            sucesso = salvar_teste_dispositivos(cliente, mes, ano, df_para_salvar)
+            if sucesso:
+                st.success("Resultados dos testes salvos com sucesso!")
+            else:
+                st.error("Erro ao salvar os resultados dos testes.")
+    
+    # Resumo dos testes
+    testes_realizados = df_testes[df_testes['status'] != '']
+    if not testes_realizados.empty:
+        st.subheader("Resumo dos Testes")
+        
+        total_dispositivos = len(df_testes)
+        total_testados = len(testes_realizados)
+        testes_ok = len(testes_realizados[testes_realizados['status'] == 'Teste OK'])
+        testes_nok = len(testes_realizados[testes_realizados['status'] == 'Teste Não OK'])
+        
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Total de Dispositivos", total_dispositivos)
+        with col2:
+            st.metric("Testes OK", testes_ok)
+        with col3:
+            st.metric("Testes Não OK", testes_nok)
+        
+        # Gráfico de pizza para visualizar os resultados
+        if total_testados > 0:
+            data = {
+                'Status': ['Teste OK', 'Teste Não OK', 'Não Testados'],
+                'Quantidade': [testes_ok, testes_nok, total_dispositivos - total_testados]
+            }
+            df_grafico = pd.DataFrame(data)
+            fig = px.pie(df_grafico, names='Status', values='Quantidade', 
+                         color='Status', 
+                         color_discrete_map={
+                             'Teste OK': 'green',
+                             'Teste Não OK': 'red',
+                             'Não Testados': 'gray'
+                         })
+            fig.update_traces(textposition='inside', textinfo='percent+label')
+            st.plotly_chart(fig)
+        
+        # Lista de dispositivos com problemas
+        problemas = testes_realizados[testes_realizados['status'] == 'Teste Não OK']
+        if not problemas.empty:
+            st.warning("Dispositivos com problemas nos testes:")
+            for _, row in problemas.iterrows():
+                st.write(f"**{row['id_disp']}** ({row['descricao']}): {row['observacao']}")
 
 if __name__ == "__main__":
     main()
