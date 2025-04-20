@@ -268,12 +268,11 @@ def pagina_plano_manutencao(cliente):
         # Não existe plano, iniciar com todos como anuais
         df['periodicidade'] = 12
     
-    # Dividir por periodicidade
-    total_dispositivos = len(df)
-    
-    # Determinar quantos dispositivos para cada periodicidade
-    # Se não houver configuração prévia, dividimos igualmente
-    if 'periodicidade' not in df.columns:
+    # Adicionar botão para distribuir automaticamente
+    if st.button("Distribuir Dispositivos Automaticamente"):
+        # Dividir por periodicidade
+        total_dispositivos = len(df)
+        
         # Cálculo para dividir aproximadamente
         qtd_mensal = total_dispositivos // 12
         qtd_trimestral = total_dispositivos // 4
@@ -282,15 +281,18 @@ def pagina_plano_manutencao(cliente):
         
         # Distribuir
         df = df.sort_values('id_disp')
-        df['periodicidade'] = 12  # Padrão: anual
+        df['periodicidade'] = 12  # Resetar todos para anual
         
+        # Aplicar distribuição
         if qtd_mensal > 0:
             df.iloc[:qtd_mensal, df.columns.get_loc('periodicidade')] = 1
         if qtd_trimestral > 0:
             df.iloc[qtd_mensal:qtd_mensal+qtd_trimestral, df.columns.get_loc('periodicidade')] = 3
         if qtd_semestral > 0:
             df.iloc[qtd_mensal+qtd_trimestral:qtd_mensal+qtd_trimestral+qtd_semestral, df.columns.get_loc('periodicidade')] = 6
-    
+        
+        st.success(f"Dispositivos distribuídos: {qtd_mensal} mensais, {qtd_trimestral} trimestrais, {qtd_semestral} semestrais, {qtd_anual} anuais.")
+     
     # Separar por periodicidade
     df_mensal = df[df['periodicidade'] == 1]
     df_trimestral = df[df['periodicidade'] == 3]
@@ -378,18 +380,31 @@ def pagina_plano_manutencao(cliente):
         st.info(f"Selecionados: {len(df_ajuste)} dispositivos")
         
         # Opção para atribuir periodicidade
-        nova_periodicidade = st.selectbox("Definir periodicidade:", [
-            ("Mensal", 1),
-            ("Trimestral", 3),
-            ("Semestral", 6),
-            ("Anual", 12)
-        ], format_func=lambda x: x[0])
+        opcoes_periodicidade = [
+            ("Mensal (1 mês)", 1),
+            ("Trimestral (3 meses)", 3),
+            ("Semestral (6 meses)", 6),
+            ("Anual (12 meses)", 12)
+        ]
+        nova_periodicidade_idx = st.selectbox(
+            "Definir periodicidade:", 
+            range(len(opcoes_periodicidade)),
+            format_func=lambda i: opcoes_periodicidade[i][0]
+        )
+        nova_periodicidade = opcoes_periodicidade[nova_periodicidade_idx]
         
         # Botão para aplicar
-        if st.button("Aplicar periodicidade"):
+        if st.button("Aplicar periodicidade aos dispositivos selecionados"):
             for idx in df_ajuste.index:
                 df.at[idx, 'periodicidade'] = nova_periodicidade[1]
-            st.success(f"Periodicidade {nova_periodicidade[0]} aplicada a {len(df_ajuste)} dispositivos!")
+                
+            # Atualizar dataframes separados
+            df_mensal = df[df['periodicidade'] == 1]
+            df_trimestral = df[df['periodicidade'] == 3]
+            df_semestral = df[df['periodicidade'] == 6]
+            df_anual = df[df['periodicidade'] == 12]
+                
+            st.success(f"Periodicidade {nova_periodicidade[0]} aplicada a {len(df_ajuste)} dispositivos! Você pode verificar nas abas acima ou salvar o plano.")
     
     with col2:
         st.markdown("### Distribuição atual")
