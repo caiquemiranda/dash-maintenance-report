@@ -19,6 +19,7 @@ import calendar
 # Importar módulos criados
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 import db
+from db import obter_dispositivos, obter_dados_dispositivos, buscar_testes_dispositivos, salvar_teste_dispositivos, obter_lista_clientes
 import processamento
 
 # Inicializar o banco de dados
