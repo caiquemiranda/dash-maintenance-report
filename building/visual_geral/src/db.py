@@ -1,6 +1,8 @@
 import sqlite3
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
+import pandas as pd
+import random
 
 def get_db_connection():
     """Estabelece conexão com o banco de dados SQLite"""
@@ -538,4 +540,131 @@ def buscar_testes_dispositivos(cliente, mes, ano):
     
     except Exception as e:
         print(f"Erro ao buscar testes de dispositivos: {str(e)}")
-        return [] 
+        return []
+
+def obter_lista_clientes():
+    """
+    Obtém a lista de todos os clientes disponíveis no banco de dados.
+    
+    Retorna:
+    list: Lista com os nomes dos clientes
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("SELECT nome FROM clientes ORDER BY nome")
+        resultados = cursor.fetchall()
+        
+        conn.close()
+        
+        # Retorna a lista de nomes dos clientes
+        return [resultado['nome'] for resultado in resultados]
+    
+    except Exception as e:
+        print(f"Erro ao obter lista de clientes: {str(e)}")
+        return []
+
+def obter_dispositivos(cliente):
+    """
+    Obtém a lista de todos os dispositivos de um cliente.
+    
+    Parâmetros:
+    - cliente: Nome do cliente
+    
+    Retorna:
+    DataFrame: DataFrame com as informações dos dispositivos [id, descricao, type, action]
+    """
+    try:
+        # Buscar dispositivos do cliente
+        dispositivos = buscar_pontos(cliente)
+        
+        if not dispositivos:
+            return pd.DataFrame(columns=['id', 'descricao', 'type', 'action'])
+        
+        # Converter para DataFrame
+        df = pd.DataFrame(dispositivos)
+        
+        # Renomear colunas para padronizar
+        df = df.rename(columns={
+            'id_disp': 'id',
+            'description': 'descricao'
+        })
+        
+        # Selecionar colunas relevantes
+        colunas = ['id', 'descricao', 'type', 'action']
+        colunas_existentes = [col for col in colunas if col in df.columns]
+        
+        return df[colunas_existentes]
+    
+    except Exception as e:
+        print(f"Erro ao obter dispositivos: {str(e)}")
+        return None
+
+def obter_dados_dispositivos(cliente, mes, ano):
+    """
+    Obtém os dados dos dispositivos para um cliente em um determinado mês/ano.
+    Simula uma consulta a um banco de dados de leituras de dispositivos.
+    
+    Parâmetros:
+    - cliente: Nome do cliente
+    - mes: Mês dos dados (1-12)
+    - ano: Ano dos dados
+    
+    Retorna:
+    DataFrame: DataFrame com os dados dos dispositivos [id_disp, datahora, valor, bateria, sinal]
+    """
+    try:
+        # Obter lista de dispositivos do cliente
+        df_dispositivos = obter_dispositivos(cliente)
+        
+        if df_dispositivos is None or df_dispositivos.empty:
+            return pd.DataFrame()
+        
+        # Simular dados para cada dispositivo (em aplicações reais, isso seria uma consulta ao banco)
+        dados = []
+        
+        # Definir início e fim do mês
+        inicio_mes = datetime(ano, mes, 1)
+        if mes == 12:
+            fim_mes = datetime(ano + 1, 1, 1) - timedelta(days=1)
+        else:
+            fim_mes = datetime(ano, mes + 1, 1) - timedelta(days=1)
+        
+        # Para cada dispositivo, simular algumas leituras ao longo do mês
+        for _, dispositivo in df_dispositivos.iterrows():
+            # Simular 5 leituras ao longo do mês para cada dispositivo
+            for _ in range(5):
+                # Gerar data aleatória dentro do mês
+                dia = random.randint(1, fim_mes.day)
+                hora = random.randint(0, 23)
+                minuto = random.randint(0, 59)
+                datahora = datetime(ano, mes, dia, hora, minuto)
+                
+                # Simular valores de medição, bateria e sinal
+                valor = random.uniform(0, 100)
+                bateria = random.uniform(0, 100)
+                sinal = random.uniform(-100, -50)
+                
+                dados.append({
+                    'id_disp': dispositivo['id'],
+                    'datahora': datahora,
+                    'valor': round(valor, 2),
+                    'bateria': round(bateria, 2),
+                    'sinal': round(sinal, 2)
+                })
+        
+        # Excluir alguns dispositivos aleatoriamente para simular offline
+        dispositivos_online = random.sample(
+            list(df_dispositivos['id']), 
+            k=int(len(df_dispositivos) * 0.8)  # 80% online
+        )
+        
+        # Filtrar apenas dispositivos online
+        dados_filtrados = [d for d in dados if d['id_disp'] in dispositivos_online]
+        
+        return pd.DataFrame(dados_filtrados)
+    
+    except Exception as e:
+        print(f"Erro ao obter dados dos dispositivos: {str(e)}")
+        return None 
