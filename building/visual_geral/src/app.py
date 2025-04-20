@@ -19,7 +19,7 @@ import calendar
 # Importar módulos criados
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 import db
-from db import obter_dispositivos, obter_dados_dispositivos, buscar_testes_dispositivos, salvar_teste_dispositivos, obter_lista_clientes
+from db import obter_dispositivos, obter_dados_dispositivos, buscar_testes_dispositivos, salvar_teste_dispositivos, obter_lista_clientes, buscar_manutencao_mensal
 import processamento
 
 # Inicializar o banco de dados
@@ -515,93 +515,104 @@ def pagina_plano_manutencao(cliente):
 def pagina_manutencao_mensal(cliente):
     st.title("Relatório de Manutenção Mensal")
     
-    # Selecionar cliente, mês e ano
-    cliente = st.selectbox("Cliente", obter_lista_clientes())
+    # Selecionar apenas mês e ano (cliente já está definido pelo menu)
     col1, col2 = st.columns(2)
     with col1:
         mes = st.selectbox("Mês", list(range(1, 13)), format_func=lambda x: calendar.month_name[x])
     with col2:
         ano = st.selectbox("Ano", list(range(datetime.now().year - 2, datetime.now().year + 1)))
     
-    if not cliente:
-        st.error("Nenhum cliente selecionado")
+    st.subheader(f"Cliente: {cliente}")
+    
+    # Obter dispositivos programados para este mês específico
+    dispositivos_planejados = buscar_manutencao_mensal(cliente, mes)
+    
+    if not dispositivos_planejados:
+        st.warning(f"Não há dispositivos programados para manutenção em {calendar.month_name[mes]} para o cliente {cliente}")
         return
     
-    # Obter dados
+    # Obter todos os dispositivos para referência e converter para DataFrame
     df_disp = obter_dispositivos(cliente)
+    
+    # Filtrar apenas os dispositivos planejados para o mês
+    ids_planejados = [disp['id_disp'] for disp in dispositivos_planejados]
+    df_disp_mes = df_disp[df_disp['id'].isin(ids_planejados)]
+    
+    # Obter dados de telemetria dos dispositivos
     df_dados = obter_dados_dispositivos(cliente, mes, ano)
+    
+    # Obter testes já realizados
     testes_anteriores = buscar_testes_dispositivos(cliente, mes, ano)
     
-    # Verificar se há dados
+    # Verificar se há dados de telemetria
     if df_dados is None or df_dados.empty:
-        st.warning(f"Não há dados para {calendar.month_name[mes]} de {ano}")
-        return
-    
-    # Verificar dispositivos offline
-    df_offline = df_disp[~df_disp['id'].isin(df_dados['id_disp'].unique())]
-    
-    # Verificar status de bateria e sinal
-    df_alertas = pd.DataFrame()
-    if not df_dados.empty:
-        # Filtrar apenas as últimas leituras de cada dispositivo
-        df_ultimas = df_dados.sort_values('datahora').groupby('id_disp').last().reset_index()
+        st.warning(f"Não há dados de telemetria para {calendar.month_name[mes]} de {ano}")
+    else:
+        # Verificar dispositivos offline
+        df_offline = df_disp_mes[~df_disp_mes['id'].isin(df_dados['id_disp'].unique())]
         
-        # Verificar bateria baixa
-        df_bat_baixa = df_ultimas[df_ultimas['bateria'] < 15]
+        # Verificar status de bateria e sinal
+        df_alertas = pd.DataFrame()
+        if not df_dados.empty:
+            # Filtrar apenas as últimas leituras de cada dispositivo
+            df_ultimas = df_dados.sort_values('datahora').groupby('id_disp').last().reset_index()
+            
+            # Verificar bateria baixa
+            df_bat_baixa = df_ultimas[df_ultimas['bateria'] < 15]
+            
+            # Verificar sinal fraco
+            df_sinal_fraco = df_ultimas[df_ultimas['sinal'] < -85]
+            
+            # Consolidar alertas
+            if not df_bat_baixa.empty:
+                df_bat_baixa['tipo_alerta'] = 'Bateria Baixa'
+                df_bat_baixa['valor'] = df_bat_baixa['bateria']
+                df_alertas = pd.concat([df_alertas, df_bat_baixa[['id_disp', 'tipo_alerta', 'valor']]])
+            
+            if not df_sinal_fraco.empty:
+                df_sinal_fraco['tipo_alerta'] = 'Sinal Fraco'
+                df_sinal_fraco['valor'] = df_sinal_fraco['sinal']
+                df_alertas = pd.concat([df_alertas, df_sinal_fraco[['id_disp', 'tipo_alerta', 'valor']]])
         
-        # Verificar sinal fraco
-        df_sinal_fraco = df_ultimas[df_ultimas['sinal'] < -85]
-        
-        # Consolidar alertas
-        if not df_bat_baixa.empty:
-            df_bat_baixa['tipo_alerta'] = 'Bateria Baixa'
-            df_bat_baixa['valor'] = df_bat_baixa['bateria']
-            df_alertas = pd.concat([df_alertas, df_bat_baixa[['id_disp', 'tipo_alerta', 'valor']]])
-        
-        if not df_sinal_fraco.empty:
-            df_sinal_fraco['tipo_alerta'] = 'Sinal Fraco'
-            df_sinal_fraco['valor'] = df_sinal_fraco['sinal']
-            df_alertas = pd.concat([df_alertas, df_sinal_fraco[['id_disp', 'tipo_alerta', 'valor']]])
-    
-    # Construir relatório
-    with st.container():
-        st.header(f"Relatório para {cliente} - {calendar.month_name[mes]} de {ano}")
-        
-        # Métricas principais
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("Total de Dispositivos", len(df_disp))
-        with col2:
-            porcentagem_online = 100 - (len(df_offline) / len(df_disp) * 100) if len(df_disp) > 0 else 0
-            st.metric("Dispositivos Online", f"{porcentagem_online:.1f}%")
-        with col3:
-            total_alertas = len(df_alertas)
-            st.metric("Dispositivos com Problemas", total_alertas)
-        
-        # Mostrar dispositivos offline
-        if not df_offline.empty:
-            st.subheader("Dispositivos Offline")
-            st.dataframe(df_offline[['id', 'descricao']])
-        
-        # Mostrar alertas
-        if not df_alertas.empty:
-            st.warning("Dispositivos com Problemas")
-            for _, alerta in df_alertas.iterrows():
-                id_disp = alerta['id_disp']
-                tipo = alerta['tipo_alerta']
-                valor = alerta['valor']
-                
-                # Buscar descrição do dispositivo
-                desc = df_disp[df_disp['id'] == id_disp]['descricao'].values[0] if id_disp in df_disp['id'].values else "Desconhecido"
-                
-                st.write(f"**{id_disp}** ({desc}): {tipo} - Valor: {valor}")
+        # Construir relatório
+        with st.container():
+            st.header(f"Relatório para {cliente} - {calendar.month_name[mes]} de {ano}")
+            
+            # Métricas principais
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Total de Dispositivos Planejados", len(df_disp_mes))
+            with col2:
+                porcentagem_online = 100 - (len(df_offline) / len(df_disp_mes) * 100) if len(df_disp_mes) > 0 else 0
+                st.metric("Dispositivos Online", f"{porcentagem_online:.1f}%")
+            with col3:
+                total_alertas = len(df_alertas)
+                st.metric("Dispositivos com Problemas", total_alertas)
+            
+            # Mostrar dispositivos offline
+            if not df_offline.empty:
+                st.subheader("Dispositivos Offline")
+                st.dataframe(df_offline[['id', 'descricao']])
+            
+            # Mostrar alertas
+            if not df_alertas.empty:
+                st.warning("Dispositivos com Problemas")
+                for _, alerta in df_alertas.iterrows():
+                    id_disp = alerta['id_disp']
+                    tipo = alerta['tipo_alerta']
+                    valor = alerta['valor']
+                    
+                    # Buscar descrição do dispositivo
+                    desc = df_disp[df_disp['id'] == id_disp]['descricao'].values[0] if id_disp in df_disp['id'].values else "Desconhecido"
+                    
+                    st.write(f"**{id_disp}** ({desc}): {tipo} - Valor: {valor}")
     
     # Seção para checklist de testes
     st.header("Checklist de Testes")
     st.markdown("Registre abaixo os resultados dos testes para cada dispositivo:")
     
-    # Criar DataFrame para os resultados dos testes
-    df_testes = pd.DataFrame(df_disp[['id', 'descricao']])
+    # Criar DataFrame para os resultados dos testes (apenas dispositivos planejados para o mês)
+    df_testes = pd.DataFrame(df_disp_mes[['id', 'descricao']])
     df_testes.rename(columns={'id': 'id_disp'}, inplace=True)
     df_testes['status'] = ''
     df_testes['observacao'] = ''
