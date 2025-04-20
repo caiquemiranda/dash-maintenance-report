@@ -313,16 +313,83 @@ def buscar_manutencao_mensal(cliente, mes):
         conn.close()
         return []
     
+    # Debug: Verificar total de registros no plano de manutenção
+    c.execute('''
+    SELECT COUNT(*) FROM plano_manutencao WHERE cliente_id = ?
+    ''', (cliente_id,))
+    total_registros = c.fetchone()[0]
+    print(f"Total de registros no plano para cliente {cliente}: {total_registros}")
+    
+    # Debug: Verificar quantos meses diferentes estão registrados
+    c.execute('''
+    SELECT mes_manutencao, COUNT(*) FROM plano_manutencao 
+    WHERE cliente_id = ? GROUP BY mes_manutencao
+    ''', (cliente_id,))
+    meses_registrados = c.fetchall()
+    for mes_reg in meses_registrados:
+        print(f"Mês {mes_reg[0]}: {mes_reg[1]} dispositivos")
+    
     # Buscar dispositivos que devem ser testados no mês
     c.execute('''
     SELECT pm.id_disp, pm.mes_manutencao,
-           lp.type, lp.action, lp.description 
+            lp.type, lp.action, lp.description 
     FROM plano_manutencao pm
     JOIN lista_de_pontos lp ON pm.id_disp = lp.id_disp AND pm.cliente_id = lp.cliente_id
     WHERE pm.cliente_id = ? AND pm.mes_manutencao = ?
     ''', (cliente_id, mes))
     
     dispositivos_para_testar = [dict(row) for row in c.fetchall()]
+    print(f"Encontrados {len(dispositivos_para_testar)} dispositivos para testar em {mes}")
     
     conn.close()
-    return dispositivos_para_testar 
+    return dispositivos_para_testar
+
+def verificar_estado_plano(cliente):
+    """
+    Função de depuração para verificar o estado atual do plano de manutenção de um cliente
+    
+    Parâmetros:
+    cliente (str): Nome do cliente
+    
+    Retorna:
+    dict: Informações sobre o estado do plano
+    """
+    conn = get_db_connection()
+    c = conn.cursor()
+    
+    # Obter ID do cliente
+    cliente_id = get_cliente_id(cliente)
+    if not cliente_id:
+        conn.close()
+        return {"erro": "Cliente não encontrado"}
+    
+    # Verificar se a tabela existe
+    c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='plano_manutencao'")
+    tabela_existe = c.fetchone()
+    if not tabela_existe:
+        conn.close()
+        return {"erro": "Tabela plano_manutencao não existe"}
+    
+    # Verificar estrutura da tabela
+    c.execute("PRAGMA table_info(plano_manutencao)")
+    colunas = [col['name'] for col in c.fetchall()]
+    
+    # Contar registros
+    c.execute("SELECT COUNT(*) FROM plano_manutencao WHERE cliente_id = ?", (cliente_id,))
+    total_registros = c.fetchone()[0]
+    
+    # Distribuição por mês
+    c.execute('''
+    SELECT mes_manutencao, COUNT(*) FROM plano_manutencao 
+    WHERE cliente_id = ? GROUP BY mes_manutencao
+    ''', (cliente_id,))
+    distribuicao = {row[0]: row[1] for row in c.fetchall()}
+    
+    conn.close()
+    
+    return {
+        "tabela_existe": bool(tabela_existe),
+        "colunas": colunas,
+        "total_registros": total_registros,
+        "distribuicao_por_mes": distribuicao
+    } 

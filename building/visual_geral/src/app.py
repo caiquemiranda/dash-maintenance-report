@@ -238,6 +238,12 @@ def pagina_upload(cliente):
 def pagina_plano_manutencao(cliente):
     st.subheader(f"Plano de Manutenção - {cliente}")
     
+    # Adicionar verificação do estado atual do plano (depuração)
+    estado_plano = db.verificar_estado_plano(cliente)
+    with st.expander("Informações de depuração do banco de dados"):
+        st.write("Estado do plano no banco de dados:")
+        st.json(estado_plano)
+    
     # Buscar dados do banco de dados
     dados = db.buscar_pontos(cliente)
     
@@ -349,8 +355,20 @@ def pagina_plano_manutencao(cliente):
         
         # Mensagem de sucesso
         st.success(f"Dispositivos distribuídos conforme estratégia {estrategia}!")
+        
+        # SALVAR AUTOMATICAMENTE APÓS DISTRIBUIÇÃO
+        df_para_salvar = df[df['mes_manutencao'] > 0][['id_disp', 'mes_manutencao']]
+        if not df_para_salvar.empty:
+            try:
+                resultado = db.salvar_plano_manutencao(cliente, df_para_salvar)
+                if resultado:
+                    st.session_state['plano_salvo'] = True
+                    st.success("Plano de manutenção salvo automaticamente no banco de dados!")
+                else:
+                    st.error("Erro ao salvar o plano automaticamente.")
+            except Exception as e:
+                st.error(f"Erro ao salvar plano: {str(e)}")
     
-    # Exibir dispositivos por mês
     st.subheader("Dispositivos por Mês")
     
     # Criar abas para cada mês
@@ -466,6 +484,10 @@ def pagina_plano_manutencao(cliente):
                 st.error("Nenhum dispositivo tem mês de manutenção atribuído. Distribua os dispositivos primeiro.")
                 return
             
+            # Debug: mostrar o que está sendo salvo
+            with st.expander("Dados a serem salvos"):
+                st.dataframe(df_para_salvar)
+            
             # Salvar no banco
             resultado = db.salvar_plano_manutencao(cliente, df_para_salvar)
             
@@ -478,6 +500,12 @@ def pagina_plano_manutencao(cliente):
 
 def pagina_manutencao_mensal(cliente):
     st.subheader(f"Manutenção Mensal - {cliente}")
+    
+    # Debug - verificar estado atual do plano
+    estado_plano = db.verificar_estado_plano(cliente)
+    with st.expander("Informações de depuração do banco de dados"):
+        st.write("Estado do plano no banco de dados:")
+        st.json(estado_plano)
     
     # Usando método compatível com todas versões do Streamlit
     if 'plano_salvo' in st.session_state and st.session_state['plano_salvo']:
