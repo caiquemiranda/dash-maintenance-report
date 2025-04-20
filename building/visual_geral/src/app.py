@@ -291,14 +291,27 @@ def pagina_plano_manutencao(cliente):
     - **Anual**: Todos os dispositivos serão testados em janeiro (uma visita por ano)
     """)
     
-    # Selecionar estratégia
-    estrategia = st.radio(
-        "Selecione a estratégia de distribuição:",
-        ["Mensal", "Trimestral", "Semestral", "Anual"]
-    )
+    # Botões para selecionar estratégia - lado a lado
+    col1, col2, col3, col4 = st.columns(4)
+    
+    estrategia = None
+    with col1:
+        if st.button("Mensal", use_container_width=True):
+            estrategia = "Mensal"
+    with col2:
+        if st.button("Trimestral", use_container_width=True):
+            estrategia = "Trimestral"
+    with col3:
+        if st.button("Semestral", use_container_width=True):
+            estrategia = "Semestral"
+    with col4:
+        if st.button("Anual", use_container_width=True):
+            estrategia = "Anual"
     
     # Botão para aplicar distribuição
-    if st.button(f"Distribuir dispositivos ({estrategia})"):
+    if estrategia:
+        st.write(f"Estratégia selecionada: **{estrategia}**")
+        
         # Determinar meses de acordo com a estratégia
         if estrategia == "Mensal":
             meses_disponiveis = list(range(1, 13))  # 1 a 12
@@ -347,7 +360,14 @@ def pagina_plano_manutencao(cliente):
         for i, mes_nome in enumerate(meses):
             mes_numero = i + 1
             with tabs[i]:
-                # Filtrar dispositivos para este mês
+                # Destaque visual para o mês atual
+                import datetime
+                mes_atual = datetime.datetime.now().month
+                if mes_numero == mes_atual:
+                    st.markdown(f"## {mes_nome} (Mês Atual)")
+                else:
+                    st.markdown(f"## {mes_nome}")
+                    
                 df_mes = df[df['mes_manutencao'] == mes_numero]
                 
                 if not df_mes.empty:
@@ -450,12 +470,19 @@ def pagina_plano_manutencao(cliente):
             resultado = db.salvar_plano_manutencao(cliente, df_para_salvar)
             
             if resultado:
+                # Force um refresh após salvar
+                st.session_state['plano_salvo'] = True
                 st.success("Plano de manutenção salvo com sucesso!")
             else:
                 st.error("Erro ao salvar o plano de manutenção.")
 
 def pagina_manutencao_mensal(cliente):
     st.subheader(f"Manutenção Mensal - {cliente}")
+    
+    # Força o recarregamento dos dados se o plano foi salvo
+    if 'plano_salvo' in st.session_state and st.session_state['plano_salvo']:
+        st.session_state['plano_salvo'] = False
+        st.experimental_rerun()
     
     # Verificar se existe um plano de manutenção salvo
     plano_existente = db.buscar_plano_manutencao(cliente)
@@ -483,16 +510,16 @@ def pagina_manutencao_mensal(cliente):
     manutencoes_do_mes = db.buscar_manutencao_mensal(cliente, mes_numero)
     
     # Converter para DataFrame para facilitar operações
-    if manutencoes_do_mes:
+    if not manutencoes_do_mes:
+        st.warning(f"Não há dispositivos para testar em {mes_selecionado}. Verifique se o plano de manutenção está configurado corretamente.")
+        df_testar = pd.DataFrame()
+    else:
+        st.success(f"Para o mês de {mes_selecionado}, você precisa testar {len(manutencoes_do_mes)} dispositivos!")
         df_testar = pd.DataFrame(manutencoes_do_mes)
         # Extrair informação de laço
         df_testar['laco'] = df_testar['id_disp'].apply(extrair_laco)
-    else:
-        df_testar = pd.DataFrame()
     
     if not df_testar.empty:
-        st.success(f"Para o mês de {mes_selecionado}, você precisa testar {len(df_testar)} dispositivos!")
-        
         # Filtro por laço
         lacos_unicos = sorted(df_testar['laco'].unique())
         laco_selecionado = st.multiselect("Filtrar por Laço:", lacos_unicos)
