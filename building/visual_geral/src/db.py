@@ -4,11 +4,11 @@ import os
 def get_db_connection():
     """Estabelece conexão com o banco de dados SQLite"""
     # Verificar se o diretório data existe
-    if not os.path.exists('building/visual_geral/data/db'):
-        os.makedirs('building/visual_geral/data/db')
+    if not os.path.exists('data/db'):
+        os.makedirs('data/db')
     
     # Caminho do banco de dados
-    db_path = 'building/visual_geral/data/db/dashboard.db'
+    db_path = 'data/db/dashboard.db'
     
     # Conectar ao banco de dados
     conn = sqlite3.connect(db_path)
