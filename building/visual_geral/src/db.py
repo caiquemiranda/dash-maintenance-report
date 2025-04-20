@@ -667,4 +667,189 @@ def obter_dados_dispositivos(cliente, mes, ano):
     
     except Exception as e:
         print(f"Erro ao obter dados dos dispositivos: {str(e)}")
-        return None 
+        return None
+
+def buscar_manutencao_anual(cliente, ano):
+    """
+    Busca as manutenções programadas para um cliente em todos os meses do ano
+    
+    Parâmetros:
+    cliente (str): Nome do cliente
+    ano (int): Ano das manutenções
+    
+    Retorna:
+    list: Lista de dicionários com informações dos dispositivos e mês planejado
+    """
+    conn = get_db_connection()
+    c = conn.cursor()
+    
+    # Obter ID do cliente
+    cliente_id = get_cliente_id(cliente)
+    if not cliente_id:
+        conn.close()
+        return []
+    
+    # Buscar todos os dispositivos no plano de manutenção
+    dispositivos_planejados = []
+    
+    # Para todos os meses do ano (1-12)
+    for mes in range(1, 13):
+        # Buscar dispositivos para este mês
+        c.execute('''
+        SELECT pm.id_disp, pm.mes_manutencao,
+                lp.type, lp.action, lp.description 
+        FROM plano_manutencao pm
+        JOIN lista_de_pontos lp ON pm.id_disp = lp.id_disp AND pm.cliente_id = lp.cliente_id
+        WHERE pm.cliente_id = ? AND pm.mes_manutencao = ?
+        ''', (cliente_id, mes))
+        
+        resultados = c.fetchall()
+        for r in resultados:
+            dispositivo = dict(r)
+            dispositivo['mes'] = mes  # Adicionar mês explicitamente
+            dispositivos_planejados.append(dispositivo)
+    
+    conn.close()
+    return dispositivos_planejados
+
+def salvar_acao_corretiva(cliente, mes, ano, id_disp, descricao_problema, acao_corretiva, resolvido):
+    """
+    Salva uma ação corretiva no banco de dados
+    
+    Parâmetros:
+    cliente (str): Nome do cliente
+    mes (int): Mês da ação corretiva
+    ano (int): Ano da ação corretiva
+    id_disp (str): ID do dispositivo
+    descricao_problema (str): Descrição do problema
+    acao_corretiva (str): Descrição da ação corretiva a ser realizada
+    resolvido (bool): Indica se o problema foi resolvido
+    
+    Retorna:
+    bool: True se a operação foi bem sucedida, False caso contrário
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Criar tabela se não existir
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS acoes_corretivas (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                cliente TEXT,
+                mes INTEGER,
+                ano INTEGER,
+                id_disp TEXT,
+                descricao_problema TEXT,
+                acao_corretiva TEXT,
+                resolvido INTEGER,
+                data_registro TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
+        # Verificar se já existe uma ação para este dispositivo/cliente/mês/ano
+        cursor.execute('''
+            SELECT id FROM acoes_corretivas 
+            WHERE cliente = ? AND mes = ? AND ano = ? AND id_disp = ?
+        ''', (cliente, mes, ano, id_disp))
+        
+        resultado = cursor.fetchone()
+        
+        # Converter boolean para inteiro (SQLite não tem tipo boolean)
+        resolvido_int = 1 if resolvido else 0
+        
+        if resultado:
+            # Atualizar registro existente
+            cursor.execute('''
+                UPDATE acoes_corretivas
+                SET descricao_problema = ?, acao_corretiva = ?, resolvido = ?, 
+                    data_registro = CURRENT_TIMESTAMP
+                WHERE cliente = ? AND mes = ? AND ano = ? AND id_disp = ?
+            ''', (descricao_problema, acao_corretiva, resolvido_int, 
+                  cliente, mes, ano, id_disp))
+        else:
+            # Inserir novo registro
+            cursor.execute('''
+                INSERT INTO acoes_corretivas
+                (cliente, mes, ano, id_disp, descricao_problema, acao_corretiva, resolvido)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            ''', (cliente, mes, ano, id_disp, descricao_problema, acao_corretiva, resolvido_int))
+        
+        conn.commit()
+        conn.close()
+        return True
+        
+    except Exception as e:
+        print(f"Erro ao salvar ação corretiva: {str(e)}")
+        return False
+
+def buscar_acoes_corretivas(cliente, mes=None, ano=None):
+    """
+    Busca ações corretivas para um cliente, opcionalmente filtradas por mês e ano
+    
+    Parâmetros:
+    cliente (str): Nome do cliente
+    mes (int, opcional): Mês das ações (se None, busca todos os meses)
+    ano (int, opcional): Ano das ações (se None, busca todos os anos)
+    
+    Retorna:
+    list: Lista de dicionários com as ações corretivas
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Verificar se a tabela existe
+        cursor.execute('''
+            SELECT name FROM sqlite_master 
+            WHERE type='table' AND name='acoes_corretivas'
+        ''')
+        
+        if not cursor.fetchone():
+            # Se a tabela não existe, retorna lista vazia
+            conn.close()
+            return []
+        
+        # Construir a consulta SQL baseada nos parâmetros
+        sql = '''
+            SELECT id_disp, mes, ano, descricao_problema, acao_corretiva, resolvido, data_registro
+            FROM acoes_corretivas
+            WHERE cliente = ?
+        '''
+        params = [cliente]
+        
+        if mes is not None:
+            sql += " AND mes = ?"
+            params.append(mes)
+        
+        if ano is not None:
+            sql += " AND ano = ?"
+            params.append(ano)
+        
+        # Ordenar por data de registro, mais recentes primeiro
+        sql += " ORDER BY data_registro DESC"
+        
+        # Executar a consulta
+        cursor.execute(sql, params)
+        resultados = cursor.fetchall()
+        conn.close()
+        
+        # Converter para lista de dicionários
+        acoes = []
+        for resultado in resultados:
+            acao = {
+                'id_disp': resultado[0],
+                'mes': resultado[1],
+                'ano': resultado[2],
+                'descricao_problema': resultado[3],
+                'acao_corretiva': resultado[4],
+                'resolvido': bool(resultado[5]),  # Converter int para boolean
+                'data_registro': resultado[6]
+            }
+            acoes.append(acao)
+        
+        return acoes
+    
+    except Exception as e:
+        print(f"Erro ao buscar ações corretivas: {str(e)}")
+        return [] 

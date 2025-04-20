@@ -15,11 +15,13 @@ from flask import Flask, request
 import db
 from dash.exceptions import PreventUpdate
 import calendar
+import base64
+import io
 
 # Importar módulos criados
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 import db
-from db import obter_dispositivos, obter_dados_dispositivos, buscar_testes_dispositivos, salvar_teste_dispositivos, obter_lista_clientes, buscar_manutencao_mensal
+from db import obter_dispositivos, obter_dados_dispositivos, buscar_testes_dispositivos, salvar_teste_dispositivos, obter_lista_clientes, buscar_manutencao_mensal, buscar_manutencao_anual, salvar_acao_corretiva, buscar_acoes_corretivas
 import processamento
 
 # Inicializar o banco de dados
@@ -519,44 +521,71 @@ def pagina_saude_sistema(cliente):
     st.subheader(f"Cliente: {cliente}")
     
     # Seletor de mês e ano
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
     with col1:
-        mes = st.selectbox("Mês", list(range(1, 13)), format_func=lambda x: calendar.month_name[x])
-    with col2:
         ano = st.selectbox("Ano", list(range(datetime.now().year - 2, datetime.now().year + 1)))
+    with col2:
+        mostrar_mes_especifico = st.checkbox("Filtrar por mês específico", value=False)
     
-    # Buscar dispositivos planejados para este mês
-    dispositivos_planejados = buscar_manutencao_mensal(cliente, mes)
+    mes = None
+    if mostrar_mes_especifico:
+        with col3:
+            mes = st.selectbox("Mês", list(range(1, 13)), format_func=lambda x: calendar.month_name[x])
     
-    # Buscar testes realizados
-    testes_anteriores = buscar_testes_dispositivos(cliente, mes, ano)
+    # Buscar dispositivos planejados para todo o ANO
+    dispositivos_planejados_ano = buscar_manutencao_anual(cliente, ano)
     
-    if not testes_anteriores:
-        st.warning(f"Não foram encontrados testes para {calendar.month_name[mes]} de {ano}")
+    # Filtrar por mês se solicitado
+    if mostrar_mes_especifico and mes is not None:
+        dispositivos_planejados = [d for d in dispositivos_planejados_ano if d['mes'] == mes]
+        # Buscar testes apenas do mês selecionado
+        testes_anteriores = buscar_testes_dispositivos(cliente, mes, ano)
+    else:
+        dispositivos_planejados = dispositivos_planejados_ano
+        # Para testes de todos os meses, teríamos que combinar os resultados de cada mês
+        testes_anteriores = []
+        for m in range(1, 13):
+            testes_mes = buscar_testes_dispositivos(cliente, m, ano)
+            testes_anteriores.extend(testes_mes)
+    
+    # Buscar ações corretivas
+    if mostrar_mes_especifico and mes is not None:
+        acoes_corretivas = buscar_acoes_corretivas(cliente, mes, ano)
+    else:
+        acoes_corretivas = buscar_acoes_corretivas(cliente, None, ano)
+    
+    # RESUMO GERAL
+    st.header(f"Resumo do Sistema - {ano}" + (f" - {calendar.month_name[mes]}" if mostrar_mes_especifico and mes else ""))
+    
+    # Total de dispositivos planejados para o ano/mês
+    total_dispositivos_planejados = len(dispositivos_planejados)
+    
+    # Se não há dispositivos planejados
+    if total_dispositivos_planejados == 0:
+        st.warning(f"Não há dispositivos planejados para manutenção" + 
+                  (f" em {calendar.month_name[mes]}" if mostrar_mes_especifico and mes else " neste ano"))
         return
     
-    # Converter para DataFrame
-    df_testes = pd.DataFrame(testes_anteriores)
-    
-    # Resumo dos testes
-    st.header(f"Resumo dos Testes - {calendar.month_name[mes]} de {ano}")
-    
-    # Total de dispositivos planejados para o mês
-    total_dispositivos_planejados = len(dispositivos_planejados)
-    if total_dispositivos_planejados == 0:
-        st.warning(f"Não há dispositivos planejados para manutenção em {calendar.month_name[mes]}")
+    # Converter testes para DataFrame para facilitar análise
+    if testes_anteriores:
+        df_testes = pd.DataFrame(testes_anteriores)
         
-        # Se não há dispositivos planejados mas há testes, mostrar isso como alerta
-        if not df_testes.empty:
-            st.warning("Há testes registrados, mas nenhum dispositivo estava planejado para este mês!")
+        # Calcular métricas
+        testes_realizados = len(df_testes)
+        testes_ok = len(df_testes[df_testes['status'] == 'Teste OK'])
+        testes_nok = len(df_testes[df_testes['status'] == 'Teste Não OK'])
+    else:
+        testes_realizados = 0
+        testes_ok = 0
+        testes_nok = 0
     
-    # Calcular métricas
-    testes_realizados = len(df_testes)
-    testes_ok = len(df_testes[df_testes['status'] == 'Teste OK'])
-    testes_nok = len(df_testes[df_testes['status'] == 'Teste Não OK'])
+    # Métricas de ações corretivas
+    acoes_total = len(acoes_corretivas)
+    acoes_resolvidas = len([a for a in acoes_corretivas if a['resolvido']])
+    acoes_pendentes = acoes_total - acoes_resolvidas
     
     # Exibir métricas
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3, col4, col5 = st.columns(5)
     with col1:
         st.metric("Dispositivos Planejados", total_dispositivos_planejados)
     with col2:
@@ -565,57 +594,116 @@ def pagina_saude_sistema(cliente):
         st.metric("Testes OK", testes_ok)
     with col4:
         st.metric("Testes Não OK", testes_nok)
+    with col5:
+        st.metric("Ações Pendentes", acoes_pendentes)
     
-    # Gráfico de pizza para visualizar os resultados
+    # Gráfico de pizza para visualizar os resultados dos testes
     if testes_realizados > 0 and total_dispositivos_planejados > 0:
-        st.subheader("Distribuição dos Testes")
-        data = {
-            'Status': ['Teste OK', 'Teste Não OK', 'Não Testados'],
-            'Quantidade': [testes_ok, testes_nok, total_dispositivos_planejados - testes_realizados]
-        }
-        df_grafico = pd.DataFrame(data)
-        fig = px.pie(df_grafico, names='Status', values='Quantidade', 
-                     color='Status', 
-                     color_discrete_map={
-                         'Teste OK': 'green',
-                         'Teste Não OK': 'red',
-                         'Não Testados': 'gray'
-                     })
-        fig.update_traces(textposition='inside', textinfo='percent+label')
-        st.plotly_chart(fig)
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.subheader("Distribuição dos Testes")
+            data = {
+                'Status': ['Teste OK', 'Teste Não OK', 'Não Testados'],
+                'Quantidade': [testes_ok, testes_nok, total_dispositivos_planejados - testes_realizados]
+            }
+            df_grafico = pd.DataFrame(data)
+            fig = px.pie(df_grafico, names='Status', values='Quantidade', 
+                        color='Status', 
+                        color_discrete_map={
+                            'Teste OK': 'green',
+                            'Teste Não OK': 'red',
+                            'Não Testados': 'gray'
+                        })
+            fig.update_traces(textposition='inside', textinfo='percent+label')
+            st.plotly_chart(fig, use_container_width=True)
+        
+        # Gráfico para ações corretivas
+        if acoes_total > 0:
+            with col2:
+                st.subheader("Status das Ações Corretivas")
+                data = {
+                    'Status': ['Resolvidas', 'Pendentes'],
+                    'Quantidade': [acoes_resolvidas, acoes_pendentes]
+                }
+                df_grafico = pd.DataFrame(data)
+                fig = px.pie(df_grafico, names='Status', values='Quantidade', 
+                            color='Status', 
+                            color_discrete_map={
+                                'Resolvidas': 'green',
+                                'Pendentes': 'orange'
+                            })
+                fig.update_traces(textposition='inside', textinfo='percent+label')
+                st.plotly_chart(fig, use_container_width=True)
     
-    # Lista de dispositivos com problemas
-    problemas = df_testes[df_testes['status'] == 'Teste Não OK']
-    if not problemas.empty:
-        st.header("Dispositivos com Problemas nos Testes")
-        st.warning(f"{len(problemas)} dispositivos reportaram problemas durante os testes")
+    # DISTRIBUIÇÃO POR MÊS
+    if not mostrar_mes_especifico:
+        st.header("Distribuição Mensal de Manutenções")
         
-        # Obter todos os dispositivos para referência
+        # Contar dispositivos por mês
+        dispositivos_por_mes = {}
+        for disp in dispositivos_planejados_ano:
+            mes = disp['mes']
+            if mes not in dispositivos_por_mes:
+                dispositivos_por_mes[mes] = 0
+            dispositivos_por_mes[mes] += 1
+        
+        # Criar DataFrame para gráfico
+        meses_df = []
+        for m in range(1, 13):
+            total_mes = dispositivos_por_mes.get(m, 0)
+            if total_mes > 0:
+                meses_df.append({
+                    'Mês': calendar.month_name[m],
+                    'Dispositivos': total_mes
+                })
+        
+        if meses_df:
+            df_meses = pd.DataFrame(meses_df)
+            fig = px.bar(df_meses, x='Mês', y='Dispositivos', 
+                        title="Dispositivos para manutenção por mês",
+                        color='Dispositivos')
+            st.plotly_chart(fig, use_container_width=True)
+    
+    # AÇÕES CORRETIVAS
+    if acoes_corretivas:
+        st.header("Histórico de Ações Corretivas")
+        
+        # Converter para DataFrame
+        df_acoes = pd.DataFrame(acoes_corretivas)
+        
+        # Obter dispositivos do cliente para mostrar descrições
         df_disp = obter_dispositivos(cliente)
+        df_disp = df_disp.rename(columns={'id': 'id_disp'})
         
-        # Mesclar para obter a descrição dos dispositivos
-        if not df_disp.empty:
-            # Converter ids para o mesmo nome de coluna para mesclar
-            df_disp = df_disp.rename(columns={'id': 'id_disp'})
-            problemas_com_desc = pd.merge(
-                problemas, 
-                df_disp[['id_disp', 'descricao']], 
-                on='id_disp', 
+        # Mesclar para obter descrições dos dispositivos
+        if not df_disp.empty and not df_acoes.empty:
+            df_acoes = pd.merge(
+                df_acoes,
+                df_disp[['id_disp', 'descricao']],
+                on='id_disp',
                 how='left'
             )
-            
-            # Exibir tabela com problemas
-            for _, row in problemas_com_desc.iterrows():
-                st.write(f"**{row['id_disp']}** ({row.get('descricao', 'Sem descrição')}): {row['observacao']}")
-        else:
-            # Exibir apenas os IDs e observações
-            for _, row in problemas.iterrows():
-                st.write(f"**{row['id_disp']}**: {row['observacao']}")
+        
+        # Formatar data de registro
+        if 'data_registro' in df_acoes.columns:
+            df_acoes['data_registro'] = pd.to_datetime(df_acoes['data_registro'])
+            df_acoes['data_formatada'] = df_acoes['data_registro'].dt.strftime('%d/%m/%Y %H:%M')
+        
+        # Mostrar em formato expandido
+        for i, acao in df_acoes.iterrows():
+            resolvido_status = "✅ Resolvido" if acao['resolvido'] else "⏳ Pendente"
+            with st.expander(f"**{acao['id_disp']}** - {acao.get('descricao', 'Dispositivo')} ({resolvido_status})"):
+                st.write(f"**Problema:** {acao['descricao_problema']}")
+                st.write(f"**Ação Corretiva:** {acao['acao_corretiva']}")
+                st.write(f"**Data:** {acao.get('data_formatada', 'N/A')}")
+                st.write(f"**Mês/Ano:** {calendar.month_name[acao['mes']]}/{acao['ano']}")
+    else:
+        st.info("Não há ações corretivas registradas para este período")
     
     # Visão histórica (gráfico de tendência)
-    st.header("Histórico de Testes")
-    # Aqui você poderia adicionar um gráfico mostrando tendências ao longo dos meses
-    st.info("Histórico de testes em desenvolvimento")
+    st.header("Histórico de Manutenção")
+    st.info("Histórico de manutenção em desenvolvimento")
 
 def pagina_manutencao_mensal(cliente):
     st.title("Relatório de Manutenção Mensal")
@@ -658,6 +746,15 @@ def pagina_manutencao_mensal(cliente):
             testes_realizados = len([t for t in testes_anteriores if t['status'] != ''])
             percentual = (testes_realizados / len(df_disp_mes) * 100) if len(df_disp_mes) > 0 else 0
             st.metric("Testes Realizados", f"{percentual:.1f}%")
+    
+    # Botão para exportar dados
+    if st.download_button(
+        label="📊 Exportar Dados do Mês",
+        data=get_csv_download_data(df_disp_mes, testes_anteriores),
+        file_name=f'relatorio_{cliente}_{calendar.month_name[mes]}_{ano}.csv',
+        mime='text/csv',
+    ):
+        st.success("Dados exportados com sucesso!")
     
     # Seção para checklist de testes
     st.header("Checklist de Testes")
@@ -727,6 +824,9 @@ def pagina_manutencao_mensal(cliente):
             st.header("Ações Corretivas Necessárias")
             st.warning(f"{len(problemas)} dispositivos requerem ações corretivas")
             
+            # Variável para controlar se alguma ação foi salva
+            acoes_salvas = False
+            
             for problema in problemas:
                 id_disp = problema['id_disp']
                 observacao = problema['observacao']
@@ -740,20 +840,75 @@ def pagina_manutencao_mensal(cliente):
                 # Exibir detalhes do problema
                 with st.expander(f"**{id_disp}** - {descricao}"):
                     st.write(f"**Problema relatado:** {observacao}")
-                    st.text_area(f"Ação corretiva para {id_disp}", 
-                                key=f"acao_{id_disp}", 
-                                placeholder="Descreva a ação corretiva a ser tomada...")
+                    
+                    # Campo para ação corretiva
+                    acao = st.text_area(
+                        f"Ação corretiva para {id_disp}", 
+                        key=f"acao_{id_disp}", 
+                        placeholder="Descreva a ação corretiva a ser tomada..."
+                    )
                     
                     # Opções para marcar resolução
-                    st.checkbox("Problema resolvido", key=f"resolvido_{id_disp}")
+                    resolvido = st.checkbox("Problema resolvido", key=f"resolvido_{id_disp}")
                     
-                    # Este botão seria usado para salvar as ações corretivas no banco
-                    # Aqui precisaria implementar a função de salvar no banco
+                    # Botão para salvar a ação corretiva no banco
                     if st.button("Registrar Ação", key=f"btn_{id_disp}"):
-                        st.success(f"Ação registrada para {id_disp} (funcionalidade em desenvolvimento)")
+                        if not acao:
+                            st.error("Por favor, descreva a ação corretiva antes de registrar.")
+                        else:
+                            # Salvar no banco de dados
+                            salvo = salvar_acao_corretiva(
+                                cliente, mes, ano, id_disp, 
+                                observacao, acao, resolvido
+                            )
+                            
+                            if salvo:
+                                st.success(f"Ação corretiva registrada para {id_disp}")
+                                acoes_salvas = True
+                            else:
+                                st.error("Erro ao registrar ação corretiva")
+            
+            # Mostrar mensagem se ações foram salvas
+            if acoes_salvas:
+                st.success("Ações corretivas registradas com sucesso!")
                 
     # Nota informativa sobre onde ver os resumos
     st.info("Para visualizar o resumo completo dos testes e análise de saúde do sistema, acesse a página 'Saúde do Sistema' no menu lateral.")
+
+def get_csv_download_data(df_dispositivos, testes):
+    """
+    Prepara dados para download como CSV
+    
+    Parâmetros:
+    df_dispositivos: DataFrame com informações dos dispositivos
+    testes: Lista de dicionários com resultados dos testes
+    
+    Retorna:
+    str: Conteúdo CSV formatado
+    """
+    # Converter testes para DataFrame
+    if testes:
+        df_testes = pd.DataFrame(testes)
+    else:
+        df_testes = pd.DataFrame(columns=['id_disp', 'status', 'observacao', 'data_teste'])
+    
+    # Renomear coluna 'id' para 'id_disp' em df_dispositivos para mesclar
+    df_dispositivos = df_dispositivos.rename(columns={'id': 'id_disp'})
+    
+    # Mesclar os DataFrames
+    df_resultado = pd.merge(
+        df_dispositivos, 
+        df_testes,
+        on='id_disp',
+        how='left'
+    )
+    
+    # Preencher valores nulos
+    df_resultado['status'] = df_resultado['status'].fillna('Não Testado')
+    df_resultado['observacao'] = df_resultado['observacao'].fillna('')
+    
+    # Converter para CSV
+    return df_resultado.to_csv(index=False)
 
 if __name__ == "__main__":
     main()
