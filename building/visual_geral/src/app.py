@@ -525,6 +525,9 @@ def pagina_saude_sistema(cliente):
     with col2:
         ano = st.selectbox("Ano", list(range(datetime.now().year - 2, datetime.now().year + 1)))
     
+    # Buscar dispositivos planejados para este mês
+    dispositivos_planejados = buscar_manutencao_mensal(cliente, mes)
+    
     # Buscar testes realizados
     testes_anteriores = buscar_testes_dispositivos(cliente, mes, ano)
     
@@ -538,9 +541,14 @@ def pagina_saude_sistema(cliente):
     # Resumo dos testes
     st.header(f"Resumo dos Testes - {calendar.month_name[mes]} de {ano}")
     
-    # Obter dispositivos do cliente para referência
-    df_disp = obter_dispositivos(cliente)
-    total_dispositivos = len(df_disp)
+    # Total de dispositivos planejados para o mês
+    total_dispositivos_planejados = len(dispositivos_planejados)
+    if total_dispositivos_planejados == 0:
+        st.warning(f"Não há dispositivos planejados para manutenção em {calendar.month_name[mes]}")
+        
+        # Se não há dispositivos planejados mas há testes, mostrar isso como alerta
+        if not df_testes.empty:
+            st.warning("Há testes registrados, mas nenhum dispositivo estava planejado para este mês!")
     
     # Calcular métricas
     testes_realizados = len(df_testes)
@@ -550,7 +558,7 @@ def pagina_saude_sistema(cliente):
     # Exibir métricas
     col1, col2, col3, col4 = st.columns(4)
     with col1:
-        st.metric("Total de Dispositivos", total_dispositivos)
+        st.metric("Dispositivos Planejados", total_dispositivos_planejados)
     with col2:
         st.metric("Testes Realizados", testes_realizados)
     with col3:
@@ -559,11 +567,11 @@ def pagina_saude_sistema(cliente):
         st.metric("Testes Não OK", testes_nok)
     
     # Gráfico de pizza para visualizar os resultados
-    if testes_realizados > 0:
+    if testes_realizados > 0 and total_dispositivos_planejados > 0:
         st.subheader("Distribuição dos Testes")
         data = {
             'Status': ['Teste OK', 'Teste Não OK', 'Não Testados'],
-            'Quantidade': [testes_ok, testes_nok, total_dispositivos - testes_realizados]
+            'Quantidade': [testes_ok, testes_nok, total_dispositivos_planejados - testes_realizados]
         }
         df_grafico = pd.DataFrame(data)
         fig = px.pie(df_grafico, names='Status', values='Quantidade', 
@@ -581,6 +589,9 @@ def pagina_saude_sistema(cliente):
     if not problemas.empty:
         st.header("Dispositivos com Problemas nos Testes")
         st.warning(f"{len(problemas)} dispositivos reportaram problemas durante os testes")
+        
+        # Obter todos os dispositivos para referência
+        df_disp = obter_dispositivos(cliente)
         
         # Mesclar para obter a descrição dos dispositivos
         if not df_disp.empty:
@@ -706,6 +717,40 @@ def pagina_manutencao_mensal(cliente):
                 st.success("Resultados dos testes salvos com sucesso!")
             else:
                 st.error("Erro ao salvar os resultados dos testes.")
+    
+    # Seção de Ações Corretivas - mostra dispositivos com problemas
+    if testes_anteriores:
+        # Filtrar apenas os testes com problemas (status "Teste Não OK")
+        problemas = [t for t in testes_anteriores if t.get('status') == 'Teste Não OK']
+        
+        if problemas:
+            st.header("Ações Corretivas Necessárias")
+            st.warning(f"{len(problemas)} dispositivos requerem ações corretivas")
+            
+            for problema in problemas:
+                id_disp = problema['id_disp']
+                observacao = problema['observacao']
+                
+                # Buscar descrição do dispositivo
+                descricao = "Sem descrição"
+                dispositivo = df_disp[df_disp['id'] == id_disp]
+                if not dispositivo.empty:
+                    descricao = dispositivo.iloc[0]['descricao']
+                
+                # Exibir detalhes do problema
+                with st.expander(f"**{id_disp}** - {descricao}"):
+                    st.write(f"**Problema relatado:** {observacao}")
+                    st.text_area(f"Ação corretiva para {id_disp}", 
+                                key=f"acao_{id_disp}", 
+                                placeholder="Descreva a ação corretiva a ser tomada...")
+                    
+                    # Opções para marcar resolução
+                    st.checkbox("Problema resolvido", key=f"resolvido_{id_disp}")
+                    
+                    # Este botão seria usado para salvar as ações corretivas no banco
+                    # Aqui precisaria implementar a função de salvar no banco
+                    if st.button("Registrar Ação", key=f"btn_{id_disp}"):
+                        st.success(f"Ação registrada para {id_disp} (funcionalidade em desenvolvimento)")
                 
     # Nota informativa sobre onde ver os resumos
     st.info("Para visualizar o resumo completo dos testes e análise de saúde do sistema, acesse a página 'Saúde do Sistema' no menu lateral.")
