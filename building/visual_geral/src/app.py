@@ -479,10 +479,15 @@ def pagina_plano_manutencao(cliente):
 def pagina_manutencao_mensal(cliente):
     st.subheader(f"Manutenção Mensal - {cliente}")
     
-    # Força o recarregamento dos dados se o plano foi salvo
+    # Usando método compatível com todas versões do Streamlit
     if 'plano_salvo' in st.session_state and st.session_state['plano_salvo']:
         st.session_state['plano_salvo'] = False
-        st.experimental_rerun()
+        try:
+            # Versões mais recentes
+            st.rerun()
+        except AttributeError:
+            # Versões mais antigas - não tenta recarregar, apenas avisa
+            st.info("Para ver as alterações mais recentes, recarregue a página.")
     
     # Verificar se existe um plano de manutenção salvo
     plano_existente = db.buscar_plano_manutencao(cliente)
